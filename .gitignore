@@ -1,0 +1,38 @@
+# Build directories
+build/
+Debug/
+Release/
+out/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.cmake
+
+# Visual Studio
+*.sln
+*.vcxproj*
+.vs/
+
+# Visual Studio Code
+.vscode/
+
+# CLion / IDEs
+.idea/
+
+# Binaries
+*.exe
+*.dll
+*.lib
+*.pdb
+*.obj
+*.o
+*.a
+
+# Misc
+*.log
+*.tmp
+*.swp
+*.DS_Store

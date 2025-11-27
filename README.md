@@ -118,7 +118,7 @@ These correspond to the deliverables requested in the project specification.
 
 ## 6. Authors
 
-Developed by **Gustavo Loiola**, **Felipe Biasuz**, and **Xiao Zhang**, with distributed responsibilities across:
+Developed by **Gustavo Loiola** and **Felipe Biasuz** with distributed responsibilities across:
 
 * Core game engine
 * Graphical interface

@@ -61,13 +61,13 @@ This separation allows the game engine to remain independent from the UI and net
 ```bash
 mkdir build && cd build
 cmake ..
-make
+cmake --build .
 ```
 
 ### **Run – Single Player**
 
 ```bash
-./tetris
+./Debug/tetris_console.exe
 ```
 
 ### **Run – Multiplayer**

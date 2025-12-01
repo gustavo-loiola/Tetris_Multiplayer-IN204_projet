@@ -47,6 +47,10 @@ public:
     void rotateClockwise();
     void rotateCounterClockwise();
 
+    int gravityIntervalMs() const noexcept {
+    return levelManager_.gravityIntervalMs();
+    }
+
 private:
     Board board_;
     TetrominoFactory factory_;

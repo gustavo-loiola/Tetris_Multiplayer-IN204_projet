@@ -2,6 +2,7 @@ set(TEST_SOURCES
     test_score.cpp
     test_board.cpp
     test_game_state.cpp
+    test_controller.cpp
 )
 
 add_executable(tetris_tests

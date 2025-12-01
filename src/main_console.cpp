@@ -69,6 +69,7 @@ void printGame(const GameState& game) {
 
 int main() {
     GameState game{20, 10, 0}; // rows, cols, startingLevel
+    tetris::controller::GameController controller{game};
 
     game.start(); // start immediately
 
@@ -90,34 +91,41 @@ int main() {
             break;
         }
 
+        using tetris::controller::InputAction;
+
         switch (c) {
         case 'a': case 'A':
-            game.moveLeft();
+            controller.handleAction(InputAction::MoveLeft);
             break;
         case 'd': case 'D':
-            game.moveRight();
+            controller.handleAction(InputAction::MoveRight);
             break;
         case 's': case 'S':
-            game.softDrop();
+            controller.handleAction(InputAction::SoftDrop);
             break;
         case 'w': case 'W':
-            game.rotateClockwise();
+            controller.handleAction(InputAction::RotateCW);
             break;
         case 'h': case 'H':
-            game.hardDrop();
+            controller.handleAction(InputAction::HardDrop);
             break;
-        case 'g': case 'G':
-            game.tick(); // one gravity step
+        case 'g': case 'G': {
+            const int intervalMs = game.gravityIntervalMs();
+            if (intervalMs > 0) {
+                controller.update(
+                    tetris::controller::GameController::Duration{intervalMs});
+            } else {
+                std::cout << "Gravity interval is non-positive; no tick.\n";
+            }
             break;
+        }
         case 'p': case 'P':
-            if (game.status() == GameStatus::Running)
-                game.pause();
-            else if (game.status() == GameStatus::Paused)
-                game.resume();
+            controller.handleAction(InputAction::PauseResume);
             break;
         case 'r': case 'R':
             game.reset();
             game.start();
+            controller.resetTiming();
             break;
         default:
             std::cout << "Unknown command: " << c << '\n';

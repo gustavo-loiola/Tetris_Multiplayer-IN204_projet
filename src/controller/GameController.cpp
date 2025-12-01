@@ -7,44 +7,56 @@ GameController::GameController(tetris::core::GameState& game)
 {
 }
 
-void GameController::handleAction(PlayerAction action) {
+void GameController::handleAction(InputAction  action) {
     using core::GameStatus;
 
-    // If the game is over, only allow a reset from outside;
-    // controller doesn't auto-reset here.
+    const auto status = game_.status();
+
+    // Note: when GameOver, we deliberately ignore all actions here.
+    // External code (UI) should call game_.reset() + game_.start()
+    // and then resetTiming() when the player wants to restart.
     if (game_.status() == GameStatus::GameOver) {
-        if (action == PlayerAction::PauseResume) {
-            // people might want to restart; external code should call game_.reset() + game_.start()
-        }
         return;
     }
 
     switch (action) {
-    case PlayerAction::MoveLeft:
-        game_.moveLeft();
+    case InputAction::MoveLeft:
+        if (status == GameStatus::Running) {
+            game_.moveLeft();
+        }
         break;
-    case PlayerAction::MoveRight:
-        game_.moveRight();
+    case InputAction::MoveRight:
+        if (status == GameStatus::Running) {
+            game_.moveRight();
+        }
         break;
-    case PlayerAction::SoftDrop:
-        game_.softDrop();
+    case InputAction::SoftDrop:
+        if (status == GameStatus::Running) {
+            game_.softDrop();
+        }
         break;
-    case PlayerAction::HardDrop:
-        game_.hardDrop();
-        // After a hard drop, we typically reset gravity accumulator
-        // so the next piece won't instantly tick.
-        accumulated_ = Duration{0};
+    case InputAction::HardDrop:
+        if (status == GameStatus::Running) {
+            game_.hardDrop();
+            // After a hard drop, reset gravity accumulator so the next
+            // piece does not instantly tick.
+            accumulated_ = Duration{0};
+        }
         break;
-    case PlayerAction::RotateCW:
-        game_.rotateClockwise();
+    case InputAction::RotateCW:
+        if (status == GameStatus::Running) {
+            game_.rotateClockwise();
+        }
         break;
-    case PlayerAction::RotateCCW:
-        game_.rotateCounterClockwise();
+    case InputAction::RotateCCW:
+        if (status == GameStatus::Running) {
+            game_.rotateCounterClockwise();
+        }
         break;
-    case PlayerAction::PauseResume:
-        if (game_.status() == GameStatus::Running) {
+    case InputAction::PauseResume:
+        if (status == GameStatus::Running) {
             game_.pause();
-        } else if (game_.status() == GameStatus::Paused) {
+        } else if (status == GameStatus::Paused) {
             game_.resume();
         }
         break;
@@ -60,7 +72,7 @@ void GameController::update(Duration elapsed) {
 
     accumulated_ += elapsed;
 
-    const int intervalMs = game_.gravityIntervalMs();
+    const int intervalMs = game_.gravityIntervalMs(); // forward to LevelManager
     if (intervalMs <= 0) {
         return;
     }

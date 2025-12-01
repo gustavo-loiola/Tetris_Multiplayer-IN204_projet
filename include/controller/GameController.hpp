@@ -1,29 +1,22 @@
 #pragma once
 
 #include "core/GameState.hpp"
+#include "controller/InputAction.hpp"
 #include <chrono>
 
 namespace tetris::controller {
-
-enum class PlayerAction {
-    MoveLeft,
-    MoveRight,
-    SoftDrop,
-    HardDrop,
-    RotateCW,
-    RotateCCW,
-    PauseResume
-};
 
 class GameController {
 public:
     using Clock = std::chrono::steady_clock;
     using Duration = std::chrono::milliseconds;
 
+    /// Controller does not own the GameState; caller keeps it alive.
     explicit GameController(tetris::core::GameState& game);
 
     // Called by UI or main loop when some input happens
-    void handleAction(PlayerAction action);
+    /// Handle a single discrete player action (e.g. key press).
+    void handleAction(InputAction  action);
 
     // Called periodically with elapsed time since last call.
     // It accumulates time and performs gravity ticks when the

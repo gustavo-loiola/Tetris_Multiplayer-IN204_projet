@@ -1,5 +1,5 @@
 #include "core/GameState.hpp"
-
+#include "core/LevelManager.hpp"
 namespace tetris::core {
 
 GameState::GameState(int rows, int cols, int startingLevel)
@@ -195,6 +195,10 @@ bool GameState::tryRotate(bool clockwise) {
 
     // Here we could implement wall kicks; for now, simple "no rotate if collides"
     return false;
+}
+
+int GameState::gravityIntervalMs() const noexcept {
+    return levelManager_.gravityIntervalMs();
 }
 
 } // namespace tetris::core

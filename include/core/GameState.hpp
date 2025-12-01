@@ -47,9 +47,7 @@ public:
     void rotateClockwise();
     void rotateCounterClockwise();
 
-    int gravityIntervalMs() const noexcept {
-    return levelManager_.gravityIntervalMs();
-    }
+    int gravityIntervalMs() const noexcept;
 
 private:
     Board board_;

@@ -40,17 +40,22 @@ void BoardPanel::drawBoard(wxDC& dc)
         return;
     }
 
-    // Compute cell size based on panel size
     const wxSize size = GetClientSize();
     const int cellWidth  = size.GetWidth()  / cols;
     const int cellHeight = size.GetHeight() / rows;
     const int cellSize = std::min(cellWidth, cellHeight);
 
-    // Center the board
     const int offsetX = (size.GetWidth()  - cellSize * cols) / 2;
     const int offsetY = (size.GetHeight() - cellSize * rows) / 2;
 
-    // Draw background grid + locked blocks
+    using tetris::ui::gui::Theme;
+
+    // Fundo do board
+    dc.SetBrush(wxBrush(Theme::boardBackground()));
+    dc.SetPen(*wxTRANSPARENT_PEN);
+    dc.DrawRectangle(offsetX, offsetY, cellSize * cols, cellSize * rows);
+
+    // Grid + blocos travados
     for (int r = 0; r < rows; ++r) {
         for (int c = 0; c < cols; ++c) {
             wxRect cellRect(
@@ -60,15 +65,15 @@ void BoardPanel::drawBoard(wxDC& dc)
                 cellSize
             );
 
-            // Cell border
-            dc.SetPen(*wxLIGHT_GREY_PEN);
+            // Grid
+            dc.SetPen(wxPen(Theme::boardGrid()));
             dc.SetBrush(*wxTRANSPARENT_BRUSH);
             dc.DrawRectangle(cellRect);
 
             // Locked blocks
             if (board.cell(r, c) == tetris::core::CellState::Filled) {
-                dc.SetBrush(*wxBLUE_BRUSH);
-                dc.SetPen(*wxBLACK_PEN);
+                dc.SetBrush(wxBrush(Theme::lockedBlockFill()));
+                dc.SetPen(wxPen(Theme::lockedBlockBorder()));
                 dc.DrawRectangle(cellRect.Deflate(1, 1));
             }
         }
@@ -123,24 +128,23 @@ void BoardPanel::drawActiveTetromino(wxDC& dc)
 void BoardPanel::drawOverlay(wxDC& dc)
 {
     using tetris::core::GameStatus;
+    using tetris::ui::gui::Theme;
 
     const GameStatus status = game_.status();
     if (status == GameStatus::Running) {
-        return; // nada a desenhar
+        return;
     }
 
     const wxSize size = GetClientSize();
     const int width  = size.GetWidth();
     const int height = size.GetHeight();
 
-    // Fundo semi-transparente (simples: uma faixa escura no meio)
-    wxBrush overlayBrush(wxColour(0, 0, 0, 128)); // preto semi-transparente
+    wxBrush overlayBrush(Theme::overlayBackground());
     wxPen   overlayPen(*wxTRANSPARENT_PEN);
 
     dc.SetBrush(overlayBrush);
     dc.SetPen(overlayPen);
 
-    // Retângulo central ocupando 50% da altura
     const int rectWidth  = width * 3 / 4;
     const int rectHeight = height / 3;
     const int rectX      = (width  - rectWidth)  / 2;
@@ -148,7 +152,6 @@ void BoardPanel::drawOverlay(wxDC& dc)
 
     dc.DrawRectangle(rectX, rectY, rectWidth, rectHeight);
 
-    // Texto: "PAUSED" ou "GAME OVER"
     wxString text;
     if (status == GameStatus::Paused) {
         text = "PAUSED";
@@ -158,13 +161,12 @@ void BoardPanel::drawOverlay(wxDC& dc)
         return;
     }
 
-    // Fonte um pouco maior
     wxFont font = GetFont();
     font.SetPointSize(font.GetPointSize() + 8);
     font.SetWeight(wxFONTWEIGHT_BOLD);
     dc.SetFont(font);
 
-    dc.SetTextForeground(*wxWHITE);
+    dc.SetTextForeground(Theme::overlayText());
 
     wxSize textSize = dc.GetTextExtent(text);
     const int textX = rectX + (rectWidth  - textSize.GetWidth())  / 2;
@@ -172,5 +174,6 @@ void BoardPanel::drawOverlay(wxDC& dc)
 
     dc.DrawText(text, textX, textY);
 }
+
 
 } // namespace tetris::ui::gui

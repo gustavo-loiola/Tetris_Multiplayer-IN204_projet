@@ -1,6 +1,7 @@
 #include "gui/TetrisFrame.hpp"
 #include "gui/BoardPanel.hpp"
 #include "gui/NextPiecePanel.hpp"
+#include "gui/ColorTheme.hpp"
 
 #include <wx/sizer.h>
 #include <wx/panel.h>
@@ -21,6 +22,8 @@ TetrisFrame::TetrisFrame(wxWindow* parent,
     , controller_{game_}
     , timer_{this}
 {
+    SetBackgroundColour(tetris::ui::gui::Theme::windowBackground());
+
     setupLayout();
     setupTimer();
 
@@ -149,32 +152,47 @@ void TetrisFrame::updateStatusBar()
     }
 
     using tetris::core::GameStatus;
+    using tetris::ui::gui::Theme;
 
-    // Safer: avoid printf-style format specifiers entirely
     {
         long long scoreValue = static_cast<long long>(game_.score());
         wxString scoreStr = "Score: " + wxString::Format("%lld", scoreValue);
         scoreText_->SetLabel(scoreStr);
+        scoreText_->SetForegroundColour(Theme::statusText()); // branco do tema
     }
 
     {
         long long levelValue = static_cast<long long>(game_.level());
         wxString levelStr = "Level: " + wxString::Format("%lld", levelValue);
         levelText_->SetLabel(levelStr);
+        levelText_->SetForegroundColour(Theme::statusText());
     }
 
-    // Status text
     wxString statusStr;
+    wxColour statusColor = Theme::statusText();
+
     switch (game_.status()) {
-    case GameStatus::NotStarted: statusStr = "NotStarted"; break;
-    case GameStatus::Running:    statusStr = "Running";    break;
-    case GameStatus::Paused:     statusStr = "Paused";     break;
-    case GameStatus::GameOver:   statusStr = "GameOver";   break;
+    case GameStatus::NotStarted:
+        statusStr = "NotStarted";
+        statusColor = Theme::statusText();
+        break;
+    case GameStatus::Running:
+        statusStr = "Running";
+        statusColor = Theme::statusRunning();
+        break;
+    case GameStatus::Paused:
+        statusStr = "Paused";
+        statusColor = Theme::statusPaused();
+        break;
+    case GameStatus::GameOver:
+        statusStr = "GameOver";
+        statusColor = Theme::statusGameOver();
+        break;
     }
 
     statusText_->SetLabel("Status: " + statusStr);
+    statusText_->SetForegroundColour(statusColor);
+    statusText_->Refresh();
 }
-
-
 
 } // namespace tetris::ui::gui

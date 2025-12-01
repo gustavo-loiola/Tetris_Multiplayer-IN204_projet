@@ -36,7 +36,7 @@ void NextPiecePanel::drawTitle(wxDC& dc)
     font.SetWeight(wxFONTWEIGHT_BOLD);
     dc.SetFont(font);
 
-    dc.SetTextForeground(*wxBLACK);
+    dc.SetTextForeground(*wxWHITE);
 
     wxSize size = GetClientSize();
     wxSize textSize = dc.GetTextExtent(text);
@@ -82,6 +82,13 @@ void NextPiecePanel::drawNextTetromino(wxDC& dc)
     const int availableWidth  = size.GetWidth();
     const int availableHeight = size.GetHeight() - topMargin;
 
+    using tetris::ui::gui::Theme;
+
+    // Fundo do painel "Next"
+    dc.SetBrush(wxBrush(Theme::nextBackground()));
+    dc.SetPen(*wxTRANSPARENT_PEN);
+    dc.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+
     const int previewRows = 4;
     const int previewCols = 4;
 
@@ -98,7 +105,7 @@ void NextPiecePanel::drawNextTetromino(wxDC& dc)
     const int offsetY = topMargin + (availableHeight - cellSize * previewRows) / 2;
 
     // Preencher fundo levemente cinza
-    dc.SetPen(*wxLIGHT_GREY_PEN);
+    dc.SetPen(wxPen(Theme::nextGrid()));
     dc.SetBrush(*wxTRANSPARENT_BRUSH);
     for (int r = 0; r < previewRows; ++r) {
         for (int c = 0; c < previewCols; ++c) {

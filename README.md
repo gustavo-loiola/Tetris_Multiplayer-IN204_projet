@@ -54,7 +54,16 @@ This separation allows the game engine to remain independent from the UI and net
 
 * C++17 or later
 * CMake ≥ 3.10
-* GTK or wxWidgets (selectable at configuration stage)
+* [vcpkg](https://github.com/microsoft/vcpkg) installed
+
+### **Setting up vcpkg**
+
+1. Clone and bootstrap vcpkg (only once):
+
+   ```powershell
+   git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+   cd C:\vcpkg
+   .\bootstrap-vcpkg.bat
 
 ### **Build**
 

@@ -1,0 +1,28 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 16
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "generator": "Ninja",
+      "binaryDir": "build",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": {
+          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+          "type": "STRING"
+        },
+        "BUILD_GUI": {
+          "value": "ON",
+          "type": "BOOL"
+        },
+        "BUILD_TESTS": {
+          "value": "ON",
+          "type": "BOOL"
+        }
+      }
+    }
+  ]
+}

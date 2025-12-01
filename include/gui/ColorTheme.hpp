@@ -11,7 +11,7 @@ struct Theme {
 
     // Tabuleiro
     static wxColour boardBackground()  { return wxColour(10, 10, 10); }
-    static wxColour boardGrid()        { return wxColour(60, 60, 60); }
+    static wxColour boardGrid()        { return wxColour(70, 70, 70); }
 
     // Blocos travados (como não temos tipo no Board ainda, uma cor neutra)
     static wxColour lockedBlockFill()  { return wxColour(80, 80, 80); }

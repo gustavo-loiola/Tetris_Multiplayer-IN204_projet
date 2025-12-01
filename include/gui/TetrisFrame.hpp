@@ -33,6 +33,10 @@ private:
     wxStaticText* levelText_{nullptr};
     wxStaticText* statusText_{nullptr};
 
+    // HUD animation state
+    int hudFlashAccumulatorMs_;
+    bool hudFlashOn_{true};
+
     void setupLayout();
     void setupTimer();
     void updateStatusBar(); 

@@ -14,10 +14,11 @@ wxEND_EVENT_TABLE()
 
 BoardPanel::BoardPanel(wxWindow* parent, tetris::core::GameState& game)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-              wxBORDER_SIMPLE | wxFULL_REPAINT_ON_RESIZE)
+              wxFULL_REPAINT_ON_RESIZE)
     , game_{game}
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT); // needed for wxBufferedPaintDC
+    SetBackgroundColour(tetris::ui::gui::Theme::boardBackground());
 }
 
 void BoardPanel::OnPaint(wxPaintEvent& WXUNUSED(event))
@@ -45,6 +46,10 @@ void BoardPanel::drawBoard(wxDC& dc)
     const int cellHeight = size.GetHeight() / rows;
     const int cellSize = std::min(cellWidth, cellHeight);
 
+    if (cellSize <= 0) {
+        return;
+    }
+
     const int offsetX = (size.GetWidth()  - cellSize * cols) / 2;
     const int offsetY = (size.GetHeight() - cellSize * rows) / 2;
 
@@ -64,7 +69,6 @@ void BoardPanel::drawBoard(wxDC& dc)
                 cellSize,
                 cellSize
             );
-
             // Grid
             dc.SetPen(wxPen(Theme::boardGrid()));
             dc.SetBrush(*wxTRANSPARENT_BRUSH);
@@ -83,6 +87,7 @@ void BoardPanel::drawBoard(wxDC& dc)
 void BoardPanel::drawActiveTetromino(wxDC& dc)
 {
     using namespace tetris::core;
+    using tetris::ui::gui::Theme;
 
     const auto& board = game_.board();
     const int rows = board.rows();
@@ -97,15 +102,42 @@ void BoardPanel::drawActiveTetromino(wxDC& dc)
     const int cellHeight = size.GetHeight() / rows;
     const int cellSize = std::min(cellWidth, cellHeight);
 
+    if (cellSize <= 0) {
+        return;
+    }
+
     const int offsetX = (size.GetWidth()  - cellSize * cols) / 2;
     const int offsetY = (size.GetHeight() - cellSize * rows) / 2;
 
     auto const& tetromino = *game_.activeTetromino();
     auto blocks = tetromino.blocks();
 
-    // 🔹 Cor por tipo
     const wxColour color = tetris::ui::gui::colorForTetromino(tetromino.type());
+    const int radius = cellSize / 10; // quão arredondado
 
+    // Primeiro, uma sombra levinha atrás
+    wxColour shadowColor(0, 0, 0, 120);
+    dc.SetPen(*wxTRANSPARENT_PEN);
+    dc.SetBrush(wxBrush(shadowColor));
+
+    for (const auto& b : blocks) {
+        if (b.row < 0 || b.row >= rows || b.col < 0 || b.col >= cols) {
+            continue;
+        }
+
+        wxRect cellRect(
+            offsetX + b.col * cellSize,
+            offsetY + b.row * cellSize,
+            cellSize,
+            cellSize
+        );
+
+        wxRect shadowRect = cellRect;
+        shadowRect.Offset(1, 1); // desloca um pouco para baixo/direita
+        dc.DrawRoundedRectangle(shadowRect.Deflate(2, 2), radius);
+    }
+
+    // Depois, a peça em si
     dc.SetBrush(wxBrush(color));
     dc.SetPen(*wxBLACK_PEN);
 
@@ -121,9 +153,10 @@ void BoardPanel::drawActiveTetromino(wxDC& dc)
             cellSize
         );
 
-        dc.DrawRectangle(cellRect.Deflate(1, 1));
+        dc.DrawRoundedRectangle(cellRect.Deflate(2, 2), radius);
     }
 }
+
 
 void BoardPanel::drawOverlay(wxDC& dc)
 {

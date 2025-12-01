@@ -33,10 +33,12 @@ void NextPiecePanel::drawTitle(wxDC& dc)
     wxString text = "Next";
 
     wxFont font = GetFont();
+    font.SetPointSize(font.GetPointSize());
     font.SetWeight(wxFONTWEIGHT_BOLD);
     dc.SetFont(font);
 
-    dc.SetTextForeground(*wxWHITE);
+    // dc.SetTextForeground(*wxWHITE);
+    dc.SetTextForeground(wxColour(200, 200, 200));
 
     wxSize size = GetClientSize();
     wxSize textSize = dc.GetTextExtent(text);

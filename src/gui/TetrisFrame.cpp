@@ -21,6 +21,12 @@ TetrisFrame::TetrisFrame(wxWindow* parent,
     , game_{20, 10, 0}
     , controller_{game_}
     , timer_{this}
+    , timerIntervalMs_{16}
+    , scoreText_{nullptr}
+    , levelText_{nullptr}
+    , statusText_{nullptr}
+    , hudFlashAccumulatorMs_{0} 
+    , hudFlashOn_{true}           
 {
     SetBackgroundColour(tetris::ui::gui::Theme::windowBackground());
 
@@ -42,7 +48,7 @@ void TetrisFrame::setupLayout()
 {
     auto* mainSizer = new wxBoxSizer(wxVERTICAL);
 
-    // --- Top banner: static texts for now ---
+    // --- Top banner ---
     auto* topPanel = new wxPanel(this);
     auto* topSizer = new wxBoxSizer(wxHORIZONTAL);
 
@@ -50,9 +56,20 @@ void TetrisFrame::setupLayout()
     levelText_ = new wxStaticText(topPanel, wxID_ANY, "Level: 0");
     statusText_ = new wxStaticText(topPanel, wxID_ANY, "Status: Running");
 
-    topSizer->Add(scoreText_, 0, wxRIGHT, 10);
-    topSizer->Add(levelText_, 0, wxRIGHT, 10);
-    topSizer->Add(statusText_, 0);
+    topPanel->SetBackgroundColour(wxColour(30, 30, 30));
+
+    wxFont baseFont = GetFont();
+    baseFont.SetPointSize(baseFont.GetPointSize() + 1);
+    baseFont.SetWeight(wxFONTWEIGHT_BOLD);
+
+    scoreText_->SetFont(baseFont);
+    levelText_->SetFont(baseFont);
+    statusText_->SetFont(baseFont);
+
+    topSizer->Add(scoreText_, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, 15);
+    topSizer->Add(levelText_, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, 15);
+    topSizer->AddStretchSpacer(1); // empurra status pro lado direito
+    topSizer->Add(statusText_, 0, wxALIGN_CENTER_VERTICAL);
 
     topPanel->SetSizer(topSizer);
     mainSizer->Add(topPanel, 0, wxEXPAND | wxALL, 5);
@@ -86,6 +103,13 @@ void TetrisFrame::OnTimer(wxTimerEvent& WXUNUSED(event))
     using Duration = tetris::controller::GameController::Duration;
 
     controller_.update(Duration{timerIntervalMs_});
+
+    // Update game state and UI
+    hudFlashAccumulatorMs_ += timerIntervalMs_;
+    if (hudFlashAccumulatorMs_ >= 250) { // 250 ms toggle
+        hudFlashAccumulatorMs_ = 0;
+        hudFlashOn_ = !hudFlashOn_;
+    }
 
     updateStatusBar();
 
@@ -154,11 +178,12 @@ void TetrisFrame::updateStatusBar()
     using tetris::core::GameStatus;
     using tetris::ui::gui::Theme;
 
+    // Score / Level sempre brancos do tema
     {
         long long scoreValue = static_cast<long long>(game_.score());
         wxString scoreStr = "Score: " + wxString::Format("%lld", scoreValue);
         scoreText_->SetLabel(scoreStr);
-        scoreText_->SetForegroundColour(Theme::statusText()); // branco do tema
+        scoreText_->SetForegroundColour(Theme::statusText());
     }
 
     {
@@ -168,31 +193,48 @@ void TetrisFrame::updateStatusBar()
         levelText_->SetForegroundColour(Theme::statusText());
     }
 
+    // Status: texto + cor (com animação)
     wxString statusStr;
     wxColour statusColor = Theme::statusText();
 
-    switch (game_.status()) {
+    const auto status = game_.status();
+
+    switch (status) {
     case GameStatus::NotStarted:
         statusStr = "NotStarted";
         statusColor = Theme::statusText();
         break;
+
     case GameStatus::Running:
         statusStr = "Running";
         statusColor = Theme::statusRunning();
         break;
+
     case GameStatus::Paused:
         statusStr = "Paused";
-        statusColor = Theme::statusPaused();
+        // piscar entre amarelo forte e cor neutra
+        statusColor = hudFlashOn_ ? Theme::statusPaused()
+                                  : Theme::statusText();
         break;
+
     case GameStatus::GameOver:
         statusStr = "GameOver";
-        statusColor = Theme::statusGameOver();
+        // piscar entre vermelho forte e cor neutra
+        statusColor = hudFlashOn_ ? Theme::statusGameOver()
+                                  : Theme::statusText();
         break;
     }
 
     statusText_->SetLabel("Status: " + statusStr);
     statusText_->SetForegroundColour(statusColor);
-    statusText_->Refresh();
+
+    auto* topPanel = statusText_->GetParent();
+    if (topPanel && topPanel->GetSizer()) {
+        topPanel->GetSizer()->Layout();
+    }
+    if (GetSizer()) {
+        GetSizer()->Layout();
+    }
 }
 
 } // namespace tetris::ui::gui

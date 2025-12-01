@@ -1,6 +1,8 @@
 #include "gui/BoardPanel.hpp"
 
 #include <wx/dcbuffer.h> // for double-buffering
+#include <wx/colour.h>
+#include <wx/font.h>
 #include <algorithm>
 
 namespace tetris::ui::gui {
@@ -24,6 +26,7 @@ void BoardPanel::OnPaint(wxPaintEvent& WXUNUSED(event))
 
     drawBoard(dc);
     drawActiveTetromino(dc);
+    drawOverlay(dc);
 }
 
 void BoardPanel::drawBoard(wxDC& dc)
@@ -110,6 +113,59 @@ void BoardPanel::drawActiveTetromino(wxDC& dc)
 
         dc.DrawRectangle(cellRect.Deflate(1, 1));
     }
+}
+
+void BoardPanel::drawOverlay(wxDC& dc)
+{
+    using tetris::core::GameStatus;
+
+    const GameStatus status = game_.status();
+    if (status == GameStatus::Running) {
+        return; // nada a desenhar
+    }
+
+    const wxSize size = GetClientSize();
+    const int width  = size.GetWidth();
+    const int height = size.GetHeight();
+
+    // Fundo semi-transparente (simples: uma faixa escura no meio)
+    wxBrush overlayBrush(wxColour(0, 0, 0, 128)); // preto semi-transparente
+    wxPen   overlayPen(*wxTRANSPARENT_PEN);
+
+    dc.SetBrush(overlayBrush);
+    dc.SetPen(overlayPen);
+
+    // Retângulo central ocupando 50% da altura
+    const int rectWidth  = width * 3 / 4;
+    const int rectHeight = height / 3;
+    const int rectX      = (width  - rectWidth)  / 2;
+    const int rectY      = (height - rectHeight) / 2;
+
+    dc.DrawRectangle(rectX, rectY, rectWidth, rectHeight);
+
+    // Texto: "PAUSED" ou "GAME OVER"
+    wxString text;
+    if (status == GameStatus::Paused) {
+        text = "PAUSED";
+    } else if (status == GameStatus::GameOver) {
+        text = "GAME OVER";
+    } else {
+        return;
+    }
+
+    // Fonte um pouco maior
+    wxFont font = GetFont();
+    font.SetPointSize(font.GetPointSize() + 8);
+    font.SetWeight(wxFONTWEIGHT_BOLD);
+    dc.SetFont(font);
+
+    dc.SetTextForeground(*wxWHITE);
+
+    wxSize textSize = dc.GetTextExtent(text);
+    const int textX = rectX + (rectWidth  - textSize.GetWidth())  / 2;
+    const int textY = rectY + (rectHeight - textSize.GetHeight()) / 2;
+
+    dc.DrawText(text, textX, textY);
 }
 
 } // namespace tetris::ui::gui

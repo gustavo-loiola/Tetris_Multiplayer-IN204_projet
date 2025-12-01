@@ -2,10 +2,10 @@
 
 #include <wx/frame.h>
 #include <wx/timer.h>
+#include <wx/stattext.h>
 
 #include "core/GameState.hpp"
 #include "controller/GameController.hpp"
-#include "gui/BoardPanel.hpp"
 
 namespace tetris::ui::gui {
 
@@ -18,21 +18,25 @@ public:
                 const wxString& title);
 
 private:
-    void setupLayout();
-
-private:
     tetris::core::GameState game_;
     tetris::controller::GameController controller_;
 
     BoardPanel* boardPanel_{nullptr};
 
     wxTimer timer_;
-    int timerIntervalMs_{16}; // ~60 FPS
+    int timerIntervalMs_{16};
 
-    void setupTimer(); 
+    // banner labels
+    wxStaticText* scoreText_{nullptr};
+    wxStaticText* levelText_{nullptr};
+    wxStaticText* statusText_{nullptr};
 
-    void OnTimer(wxTimerEvent& event); 
-    void OnKeyDown(wxKeyEvent& event); 
+    void setupLayout();
+    void setupTimer();
+    void updateStatusBar(); 
+
+    void OnTimer(wxTimerEvent& event);
+    void OnKeyDown(wxKeyEvent& event);
 
     wxDECLARE_EVENT_TABLE();
 };

@@ -15,6 +15,7 @@ private:
 
     void drawBoard(wxDC& dc);
     void drawActiveTetromino(wxDC& dc);
+    void drawOverlay(wxDC& dc);
 
 private:
     tetris::core::GameState& game_;

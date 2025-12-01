@@ -2,6 +2,7 @@
 #include "gui/BoardPanel.hpp"
 
 #include <wx/sizer.h>
+#include <wx/panel.h>
 
 namespace tetris::ui::gui {
 
@@ -15,15 +16,15 @@ TetrisFrame::TetrisFrame(wxWindow* parent,
     : wxFrame(parent, id, title,
               wxDefaultPosition,
               wxSize(400, 600))
-    , game_{20, 10, 0}  // rows, cols, starting level
+    , game_{20, 10, 0}
     , controller_{game_}
-    , timer_(this)
+    , timer_{this}
 {
     setupLayout();
     setupTimer();
 
-    // Start the game so there is an active tetromino
     game_.start();
+    updateStatusBar();
 
     Centre();
 
@@ -37,11 +38,32 @@ void TetrisFrame::setupLayout()
 {
     auto* mainSizer = new wxBoxSizer(wxVERTICAL);
 
+    // --- Top banner: static texts for now ---
+    auto* topPanel = new wxPanel(this);
+    auto* topSizer = new wxBoxSizer(wxHORIZONTAL);
+
+    scoreText_ = new wxStaticText(topPanel, wxID_ANY, "Score: 0");
+    levelText_ = new wxStaticText(topPanel, wxID_ANY, "Level: 0");
+    statusText_ = new wxStaticText(topPanel, wxID_ANY, "Status: Running");
+
+    topSizer->Add(scoreText_, 0, wxRIGHT, 10);
+    topSizer->Add(levelText_, 0, wxRIGHT, 10);
+    topSizer->Add(statusText_, 0);
+
+    topPanel->SetSizer(topSizer);
+    mainSizer->Add(topPanel, 0, wxEXPAND | wxALL, 5);
+
+    // --- Board panel (unchanged) ---
     boardPanel_ = new BoardPanel(this, game_);
-    mainSizer->Add(boardPanel_, 1, wxEXPAND | wxALL, 5);
+    // mainSizer->Add(boardPanel_, 1, wxEXPAND | wxALL, 5);
+    mainSizer->Add(boardPanel_, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 5);
 
     SetSizer(mainSizer);
     Layout();
+
+    if (boardPanel_) {
+        boardPanel_->SetFocus();
+    }
 }
 
 void TetrisFrame::setupTimer()
@@ -54,6 +76,8 @@ void TetrisFrame::OnTimer(wxTimerEvent& WXUNUSED(event))
     using Duration = tetris::controller::GameController::Duration;
 
     controller_.update(Duration{timerIntervalMs_});
+
+    updateStatusBar();
 
     if (boardPanel_) {
         boardPanel_->Refresh();
@@ -94,13 +118,50 @@ void TetrisFrame::OnKeyDown(wxKeyEvent& event)
         controller_.resetTiming();
         break;
     default:
-        event.Skip(); // allow others
+        event.Skip();
         return;
     }
+
+    updateStatusBar();
 
     if (boardPanel_) {
         boardPanel_->Refresh();
     }
 }
+
+void TetrisFrame::updateStatusBar()
+{
+    if (!scoreText_ || !levelText_ || !statusText_) {
+        return;
+    }
+
+    using tetris::core::GameStatus;
+
+    // Safer: avoid printf-style format specifiers entirely
+    {
+        long long scoreValue = static_cast<long long>(game_.score());
+        wxString scoreStr = "Score: " + wxString::Format("%lld", scoreValue);
+        scoreText_->SetLabel(scoreStr);
+    }
+
+    {
+        long long levelValue = static_cast<long long>(game_.level());
+        wxString levelStr = "Level: " + wxString::Format("%lld", levelValue);
+        levelText_->SetLabel(levelStr);
+    }
+
+    // Status text
+    wxString statusStr;
+    switch (game_.status()) {
+    case GameStatus::NotStarted: statusStr = "NotStarted"; break;
+    case GameStatus::Running:    statusStr = "Running";    break;
+    case GameStatus::Paused:     statusStr = "Paused";     break;
+    case GameStatus::GameOver:   statusStr = "GameOver";   break;
+    }
+
+    statusText_->SetLabel("Status: " + statusStr);
+}
+
+
 
 } // namespace tetris::ui::gui

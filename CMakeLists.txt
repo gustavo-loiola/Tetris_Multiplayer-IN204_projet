@@ -59,6 +59,7 @@ if(BUILD_GUI)
         src/gui/TetrisApp.cpp
         src/gui/TetrisFrame.cpp
         src/gui/BoardPanel.cpp
+        src/gui/NextPiecePanel.cpp
     )
 
     target_include_directories(tetris_gui

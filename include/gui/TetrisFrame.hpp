@@ -10,6 +10,7 @@
 namespace tetris::ui::gui {
 
 class BoardPanel;
+class NextPiecePanel;
 
 class TetrisFrame : public wxFrame {
 public:
@@ -22,6 +23,7 @@ private:
     tetris::controller::GameController controller_;
 
     BoardPanel* boardPanel_{nullptr};
+    NextPiecePanel* nextPanel_{nullptr};
 
     wxTimer timer_;
     int timerIntervalMs_{16};

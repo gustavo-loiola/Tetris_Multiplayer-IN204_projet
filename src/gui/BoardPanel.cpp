@@ -1,4 +1,5 @@
 #include "gui/BoardPanel.hpp"
+#include "gui/ColorTheme.hpp"
 
 #include <wx/dcbuffer.h> // for double-buffering
 #include <wx/colour.h>
@@ -94,9 +95,13 @@ void BoardPanel::drawActiveTetromino(wxDC& dc)
     const int offsetX = (size.GetWidth()  - cellSize * cols) / 2;
     const int offsetY = (size.GetHeight() - cellSize * rows) / 2;
 
-    auto blocks = game_.activeTetromino()->blocks();
+    auto const& tetromino = *game_.activeTetromino();
+    auto blocks = tetromino.blocks();
 
-    dc.SetBrush(*wxRED_BRUSH);
+    // 🔹 Cor por tipo
+    const wxColour color = tetris::ui::gui::colorForTetromino(tetromino.type());
+
+    dc.SetBrush(wxBrush(color));
     dc.SetPen(*wxBLACK_PEN);
 
     for (const auto& b : blocks) {

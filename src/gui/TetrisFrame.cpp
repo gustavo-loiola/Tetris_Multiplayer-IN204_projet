@@ -1,5 +1,6 @@
 #include "gui/TetrisFrame.hpp"
 #include "gui/BoardPanel.hpp"
+#include "gui/NextPiecePanel.hpp"
 
 #include <wx/sizer.h>
 #include <wx/panel.h>
@@ -53,10 +54,16 @@ void TetrisFrame::setupLayout()
     topPanel->SetSizer(topSizer);
     mainSizer->Add(topPanel, 0, wxEXPAND | wxALL, 5);
 
-    // --- Board panel (unchanged) ---
+    // --- Middle area: board on the left, next-piece on the right ---
+    auto* middleSizer = new wxBoxSizer(wxHORIZONTAL);
+
     boardPanel_ = new BoardPanel(this, game_);
-    // mainSizer->Add(boardPanel_, 1, wxEXPAND | wxALL, 5);
-    mainSizer->Add(boardPanel_, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 5);
+    middleSizer->Add(boardPanel_, 3, wxEXPAND | wxRIGHT, 5);
+
+    nextPanel_ = new NextPiecePanel(this, game_);
+    middleSizer->Add(nextPanel_, 1, wxEXPAND);
+
+    mainSizer->Add(middleSizer, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 5);
 
     SetSizer(mainSizer);
     Layout();
@@ -81,6 +88,9 @@ void TetrisFrame::OnTimer(wxTimerEvent& WXUNUSED(event))
 
     if (boardPanel_) {
         boardPanel_->Refresh();
+    }
+    if (nextPanel_) {        
+        nextPanel_->Refresh();
     }
 }
 
@@ -126,6 +136,9 @@ void TetrisFrame::OnKeyDown(wxKeyEvent& event)
 
     if (boardPanel_) {
         boardPanel_->Refresh();
+    }
+    if (nextPanel_) {       
+        nextPanel_->Refresh();
     }
 }
 

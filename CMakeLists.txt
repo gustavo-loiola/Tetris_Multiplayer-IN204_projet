@@ -13,6 +13,7 @@ add_library(tetris_core
     src/core/GameState.cpp
     src/core/ScoreManager.cpp
     src/core/LevelManager.cpp
+    src/controller/GameController.cpp
 )
 
 target_include_directories(tetris_core

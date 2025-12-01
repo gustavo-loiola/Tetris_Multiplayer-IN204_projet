@@ -6,6 +6,7 @@
 #include "core/Board.hpp"
 #include "core/Tetromino.hpp"
 #include "core/Types.hpp"
+#include "controller/GameController.hpp"
 
 using namespace tetris::core;
 

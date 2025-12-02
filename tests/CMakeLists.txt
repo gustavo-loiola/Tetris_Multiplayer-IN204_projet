@@ -3,6 +3,7 @@ set(TEST_SOURCES
     test_board.cpp
     test_game_state.cpp
     test_controller.cpp
+    test_network_serialization.cpp
 )
 
 add_executable(tetris_tests
@@ -12,6 +13,7 @@ add_executable(tetris_tests
 target_link_libraries(tetris_tests
     PRIVATE 
     tetris_core
+    tetris_net
     Catch2::Catch2WithMain
 )
 

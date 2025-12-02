@@ -1,8 +1,6 @@
 #include "gui/TetrisApp.hpp"
 #include "gui/TetrisFrame.hpp"
-
-// #include <wx/log.h>
-// #include <wx/msgdlg.h>
+#include "gui/StartFrame.hpp"
 
 wxIMPLEMENT_APP(tetris::ui::gui::TetrisApp);
 
@@ -10,17 +8,15 @@ namespace tetris::ui::gui {
 
 bool TetrisApp::OnInit()
 {
-    // Simple visual check to prove OnInit is being called
-    // wxMessageBox("TetrisApp::OnInit called", "Debug", wxOK | wxICON_INFORMATION); //temp
-    
     if (!wxApp::OnInit()) {
         return false;
     }
 
-    auto* frame = new TetrisFrame(nullptr, wxID_ANY, "Tetris - Single Player");
+    // Show start menu instead of directly opening single-player
+    auto* frame = new StartFrame(nullptr);
     frame->Show(true);
     frame->Centre();
-    
+
     return true;
 }
 

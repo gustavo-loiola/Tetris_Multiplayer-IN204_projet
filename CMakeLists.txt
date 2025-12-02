@@ -32,6 +32,22 @@ target_include_directories(tetris_core
 )
 
 # =========================
+# Network library (messages + serialization)
+# =========================
+add_library(tetris_net
+    src/network/Serialization.cpp
+)
+
+target_include_directories(tetris_net
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# If later the network layer needs symbols from tetris_core
+# (e.g. converting GameState <-> DTOs), we can add:
+# target_link_libraries(tetris_net PUBLIC tetris_core)
+
+# =========================
 # Console executable
 # =========================
 add_executable(tetris_console
@@ -60,6 +76,8 @@ if(BUILD_GUI)
         src/gui/TetrisFrame.cpp
         src/gui/BoardPanel.cpp
         src/gui/NextPiecePanel.cpp
+        src/gui/StartFrame.cpp
+        src/gui/MultiplayerConfigDialog.cpp
     )
 
     target_include_directories(tetris_gui

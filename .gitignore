@@ -3,7 +3,7 @@ build/
 Debug/
 Release/
 out/
-
+temp/
 # CMake
 CMakeFiles/
 CMakeCache.txt

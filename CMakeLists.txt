@@ -104,6 +104,7 @@ if(BUILD_GUI)
     target_link_libraries(tetris_gui
         PRIVATE
             tetris_core
+            tetris_net
             wx::core
             wx::base
     )

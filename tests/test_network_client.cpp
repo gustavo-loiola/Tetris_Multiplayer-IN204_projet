@@ -18,6 +18,11 @@ using tetris::net::PlayerStateDTO;
 using tetris::net::BoardCellDTO;
 using tetris::net::Tick;
 
+using tetris::net::NetworkClient;
+using tetris::net::Message;
+using tetris::net::MatchResult;
+using tetris::net::MatchOutcome;
+
 // NOTE: FakeNetworkSession is defined in the global namespace (see other tests),
 // so we do NOT prefix it with tetris::net here.
 using ::FakeNetworkSession;
@@ -225,4 +230,45 @@ TEST_CASE("NetworkClient invokes StateUpdate handler callback", "[net][client][s
     REQUIRE(u.players.size() == 2);
     CHECK(u.players[0].id == p1.id);
     CHECK(u.players[1].id == p2.id);
+}
+
+TEST_CASE("NetworkClient receives MatchResult and stores/calls handler", "[net][client][matchresult]")
+{
+    auto session = std::make_shared<FakeNetworkSession>();
+    NetworkClient client(session, "Alice");
+
+    int callbackCount = 0;
+    std::optional<MatchResult> callbackResult;
+
+    client.setMatchResultHandler(
+        [&](const MatchResult& r) {
+            ++callbackCount;
+            callbackResult = r;
+        }
+    );
+
+    MatchResult result;
+    result.endTick   = 42;
+    result.playerId  = 1u;
+    result.outcome   = MatchOutcome::Win;
+    result.finalScore = 999;
+
+    Message msg;
+    msg.kind    = MessageKind::MatchResult;
+    msg.payload = result;
+
+    REQUIRE_FALSE(client.lastMatchResult().has_value());
+    CHECK(callbackCount == 0);
+
+    session->injectIncoming(msg);
+
+    auto last = client.lastMatchResult();
+    REQUIRE(last.has_value());
+    CHECK(last->playerId   == result.playerId);
+    CHECK(last->outcome    == result.outcome);
+    CHECK(last->finalScore == result.finalScore);
+
+    CHECK(callbackCount == 1);
+    REQUIRE(callbackResult.has_value());
+    CHECK(callbackResult->playerId == result.playerId);
 }

@@ -5,9 +5,14 @@
 #include <wx/sizer.h>
 #include <wx/msgdlg.h>
 #include <wx/app.h>
+#include <wx/textdlg.h>
 
 #include "gui/TetrisFrame.hpp"
 #include "gui/MultiplayerConfigDialog.hpp"
+#include "gui/MultiplayerFrame.hpp"  
+
+#include "network/TcpSession.hpp"   
+#include "network/NetworkClient.hpp" 
 
 namespace tetris::ui::gui {
 
@@ -62,24 +67,74 @@ void StartFrame::OnSinglePlayer(wxCommandEvent&)
 void StartFrame::OnMultiplayer(wxCommandEvent&)
 {
     MultiplayerConfigDialog dlg(this);
-    if (dlg.ShowModal() == wxID_OK) {
-        const auto& cfg = dlg.getConfig();
-
-        wxString msg;
-        msg << "Mode: "
-            << (cfg.mode == tetris::net::GameMode::TimeAttack ? "Time Attack" : "Shared Turns")
-            << "\nAs " << (cfg.isHost ? "Host" : "Client")
-            << "\nTime limit: " << cfg.timeLimitSeconds
-            << " s"
-            << "\nPieces per turn: " << cfg.piecesPerTurn
-            << "\nHost address: " << cfg.hostAddress
-            << "\nPort: " << cfg.port;
-
-        wxMessageBox(msg, "Multiplayer configuration",
-                     wxOK | wxICON_INFORMATION, this);
-
-        // Week 3: start host/client and open multiplayer game frame here.
+    if (dlg.ShowModal() != wxID_OK) {
+        return;
     }
+
+    const auto& cfg = dlg.getConfig();
+
+    if (cfg.isHost) {
+        // For now, we only implement the client "join" path in the GUI.
+        // Hosting will be wired in a later step (it requires starting
+        // TcpServer + NetworkHost + HostGameSession + HostLoop).
+        wxMessageBox("Host mode from the GUI is not wired yet.\n\n"
+                     "You can start a host process separately, then use this\n"
+                     "dialog to join it as a client.",
+                     "Host mode not implemented",
+                     wxOK | wxICON_INFORMATION,
+                     this);
+        return;
+    }
+
+    // --- Client / Join path ---
+
+    // Ask the user for a player name. You can later move this field into the dialog if you prefer.
+    wxString defaultName = "Player";
+    wxString playerName = wxGetTextFromUser(
+        "Enter your player name:",
+        "Player name",
+        defaultName,
+        this
+    );
+
+    if (playerName.IsEmpty()) {
+        // User cancelled name entry; abort joining.
+        return;
+    }
+
+    // Create a TCP client session to the selected host:port.
+    auto session = tetris::net::TcpSession::createClient(cfg.hostAddress, cfg.port);
+    if (!session || !session->isConnected()) {
+        wxMessageBox(
+            wxString::Format("Could not connect to host %s:%u",
+                             cfg.hostAddress, cfg.port),
+            "Connection error",
+            wxOK | wxICON_ERROR,
+            this
+        );
+        return;
+    }
+
+    // Create NetworkClient and send JoinRequest.
+    auto client = std::make_shared<tetris::net::NetworkClient>(
+        session,
+        playerName.ToStdString()
+    );
+    client->start();
+
+    // Open the MultiplayerFrame, which will listen for StateUpdate messages
+    // and render the authoritative game state from the host.
+    auto* multiFrame = new tetris::gui::MultiplayerFrame(client, nullptr);
+    multiFrame->Show(true);
+    multiFrame->Centre();
+
+    // Make the multiplayer frame the new top window so that when it closes,
+    // the application knows it can terminate.
+    wxTheApp->SetTopWindow(multiFrame);
+
+    // Destroy the start frame instead of just hiding it,
+    // so we don't keep a hidden, zombie window around.
+    this->Destroy();
 }
 
 void StartFrame::OnExit(wxCommandEvent&)

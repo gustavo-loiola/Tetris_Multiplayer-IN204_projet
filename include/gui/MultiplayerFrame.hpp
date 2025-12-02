@@ -49,6 +49,9 @@ private:
     /// Extract the local player's state from the latest StateUpdate.
     const tetris::net::PlayerStateDTO* FindLocalPlayerState() const;
 
+    /// Called by NetworkClient's MatchResult handler.
+    void OnMatchResult(const tetris::net::MatchResult& result);
+
     wxDECLARE_EVENT_TABLE();
 };
 

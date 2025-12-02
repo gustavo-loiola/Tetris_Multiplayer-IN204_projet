@@ -56,9 +56,20 @@ HostGameSession::update(Tick currentTick,
     m_host.poll();
 
     auto results = m_rules->update(currentTick, players);
+
     if (!results.empty()) {
         m_finished = true;
+
+        // Notify each player of their own result.
+        for (const auto& r : results) {
+            Message msg;
+            msg.kind    = MessageKind::MatchResult;
+            msg.payload = r;
+
+            m_host.sendTo(r.playerId, msg);
+        }
     }
+
     return results;
 }
 

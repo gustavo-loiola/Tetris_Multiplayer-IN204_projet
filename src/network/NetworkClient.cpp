@@ -53,18 +53,25 @@ void NetworkClient::handleMessage(const Message& msg)
     }
     case MessageKind::StateUpdate: {
         const auto& m = std::get<StateUpdate>(msg.payload);
-        // Store latest state
         m_lastStateUpdate = m;
-        // Notify subscriber (e.g., GUI)
         if (m_stateUpdateHandler) {
             m_stateUpdateHandler(*m_lastStateUpdate);
         }
         break;
     }
+    case MessageKind::MatchResult: {
+        const auto& m = std::get<MatchResult>(msg.payload);
+        m_lastMatchResult = m;
+        if (m_matchResultHandler) {
+            m_matchResultHandler(*m_lastMatchResult);
+        }
+        break;
+    }
     default:
-        // Other messages (StartGame, MatchResult, Error) can be handled later
+        // Other messages (StartGame, Error, etc.) can be handled later
         break;
     }
 }
+
 
 } // namespace tetris::net

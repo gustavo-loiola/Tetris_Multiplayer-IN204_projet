@@ -36,6 +36,9 @@ public:
     /// send a message to all connected players.
     void broadcast(const Message& msg);
 
+    /// Send a message to a specific player, if connected.
+    void sendTo(PlayerId playerId, const Message& msg);
+
 private:
     struct PlayerInfo {
         PlayerId id;

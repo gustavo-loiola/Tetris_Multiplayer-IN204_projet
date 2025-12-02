@@ -1,6 +1,7 @@
 #include "gui/MultiplayerFrame.hpp"
 
 #include <wx/sizer.h>
+#include <wx/msgdlg.h>
 
 namespace tetris::gui {
 
@@ -49,6 +50,12 @@ MultiplayerFrame::MultiplayerFrame(std::shared_ptr<NetworkClient> client,
                 // This lambda is executed in whatever thread calls injectIncoming / poll.
                 // In your architecture, that should be the GUI/main thread.
                 OnStateUpdate(update);
+            }
+        );
+
+        m_client->setMatchResultHandler(
+            [this](const MatchResult& result) {
+                OnMatchResult(result);
             }
         );
     }
@@ -131,6 +138,45 @@ const PlayerStateDTO* MultiplayerFrame::FindLocalPlayerState() const
         }
     }
     return nullptr;
+}
+
+void MultiplayerFrame::OnMatchResult(const MatchResult& result)
+{
+    // Only care about our own result.
+    if (!m_client) {
+        return;
+    }
+    auto idOpt = m_client->playerId();
+    if (!idOpt || *idOpt != result.playerId) {
+        return;
+    }
+
+    // Stop refreshing; match is over.
+    if (m_refreshTimer.IsRunning()) {
+        m_refreshTimer.Stop();
+    }
+
+    // Update status text and show a message box.
+    const char* outcomeStr = nullptr;
+    switch (result.outcome) {
+    case MatchOutcome::Win:  outcomeStr = "You Win!";  break;
+    case MatchOutcome::Lose: outcomeStr = "You Lose."; break;
+    case MatchOutcome::Draw: outcomeStr = "Draw.";     break;
+    default:                 outcomeStr = "Match finished."; break;
+    }
+
+    if (m_statusText) {
+        m_statusText->SetLabel(wxString::FromUTF8(outcomeStr));
+    }
+
+    wxString msg;
+    msg << outcomeStr
+        << "\nFinal score: " << result.finalScore;
+
+    wxMessageBox(msg,
+                 "Match result",
+                 wxOK | wxICON_INFORMATION,
+                 this);
 }
 
 } // namespace tetris::gui

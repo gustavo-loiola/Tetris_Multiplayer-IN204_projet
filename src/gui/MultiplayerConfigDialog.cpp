@@ -139,6 +139,14 @@ MultiplayerConfigDialog::MultiplayerConfigDialog(wxWindow* parent)
     m_radioJoin->SetValue(false);
 
     m_modeBox->SetSelection(0); // Time Attack
+    // Explicitly sync m_config with the default UI state
+    m_config.isHost          = true;
+    m_config.mode            = tetris::net::GameMode::TimeAttack;
+    m_config.timeLimitSeconds = static_cast<std::uint32_t>(m_timeLimitSpin->GetValue());
+    m_config.piecesPerTurn    = static_cast<std::uint32_t>(m_piecesPerTurnSpin->GetValue());
+    m_config.hostAddress      = m_hostAddressCtrl->GetValue().ToStdString();
+    m_config.port             = static_cast<std::uint16_t>(m_portSpin->GetValue());
+    
     UpdateModeControls();
     UpdateHostJoinControls();
 }

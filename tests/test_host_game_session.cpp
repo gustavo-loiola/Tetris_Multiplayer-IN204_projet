@@ -16,6 +16,7 @@ using tetris::net::MultiplayerConfig;
 using tetris::net::NetworkHost;
 using tetris::net::HostGameSession;
 using tetris::net::MatchOutcome;
+using tetris::net::PlayerId;
 
 TEST_CASE("HostGameSession: start initializes rules and notifies clients", "[host][session]")
 {
@@ -214,4 +215,50 @@ TEST_CASE("HostGameSession::isInputAllowed - SharedTurns only current player all
 
     CHECK_FALSE(gameSession.isInputAllowed(1u));
     CHECK_FALSE(gameSession.isInputAllowed(2u));
+}
+
+TEST_CASE("HostGameSession: sends MatchResult messages to each client", "[host][session][matchresult]")
+{
+    MultiplayerConfig cfg;
+    cfg.mode = tetris::net::GameMode::TimeAttack;
+    cfg.timeLimitSeconds = 60;
+
+    NetworkHost host(cfg);
+
+    auto session1 = std::make_shared<FakeNetworkSession>();
+    auto session2 = std::make_shared<FakeNetworkSession>();
+    host.addClient(session1);
+    host.addClient(session2);
+
+    auto rules = std::make_unique<TimeAttackRules>(/*timeLimitTicks=*/10);
+    HostGameSession gameSession(host, cfg, std::move(rules));
+
+    std::vector<PlayerSnapshot> players = {
+        {1u, 100, true},
+        {2u, 50,  true}
+    };
+
+    gameSession.start(/*startTick=*/0, players);
+
+    // Advance to a tick past the time limit so that rules produce results.
+    auto results = gameSession.update(/*currentTick=*/20, players);
+    REQUIRE_FALSE(results.empty());
+    CHECK(gameSession.isFinished());
+
+    // Each session should have received exactly one MatchResult for its player.
+    REQUIRE(session1->sentMessages.size() >= 2); // StartGame + MatchResult
+    REQUIRE(session2->sentMessages.size() >= 2);
+
+    auto findMatchResultFor = [](const std::vector<tetris::net::Message>& msgs, PlayerId pid) {
+        for (const auto& m : msgs) {
+            if (m.kind == tetris::net::MessageKind::MatchResult) {
+                const auto& r = std::get<tetris::net::MatchResult>(m.payload);
+                if (r.playerId == pid) return true;
+            }
+        }
+        return false;
+    };
+
+    CHECK(findMatchResultFor(session1->sentMessages, 1u));
+    CHECK(findMatchResultFor(session2->sentMessages, 2u));
 }

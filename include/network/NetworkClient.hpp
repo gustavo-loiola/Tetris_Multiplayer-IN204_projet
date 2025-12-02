@@ -2,7 +2,7 @@
 
 #include <string>
 #include <optional>
-#include <functional> 
+#include <functional>
 
 #include "network/INetworkSession.hpp"
 #include "controller/InputAction.hpp"
@@ -13,9 +13,12 @@ namespace tetris::net {
 /// - Sends JoinRequest when started.
 /// - Receives JoinAccept and stores assigned PlayerId.
 /// - Sends InputActionMessage to the host.
+/// - Receives StateUpdate and exposes it to UI via callback / getter.
+/// - Receives MatchResult and exposes it to UI via callback / getter.
 class NetworkClient {
 public:
-    using StateUpdateHandler = std::function<void(const StateUpdate&)>;
+    using StateUpdateHandler  = std::function<void(const StateUpdate&)>;
+    using MatchResultHandler  = std::function<void(const MatchResult&)>;
 
     NetworkClient(INetworkSessionPtr session, std::string playerName);
 
@@ -30,13 +33,20 @@ public:
     std::optional<PlayerId> playerId() const { return m_playerId; }
 
     /// Register a callback to be notified whenever a new StateUpdate arrives.
-    /// UI code (e.g., MultiplayerFrame) can use this to redraw.
     void setStateUpdateHandler(StateUpdateHandler handler) {
         m_stateUpdateHandler = std::move(handler);
     }
 
     /// Optional: latest StateUpdate received from host.
     std::optional<StateUpdate> lastStateUpdate() const { return m_lastStateUpdate; }
+
+    /// Register a callback to be notified when a MatchResult is received.
+    void setMatchResultHandler(MatchResultHandler handler) {
+        m_matchResultHandler = std::move(handler);
+    }
+
+    /// Optional: latest MatchResult received from host.
+    std::optional<MatchResult> lastMatchResult() const { return m_lastMatchResult; }
 
 private:
     void handleMessage(const Message& msg);
@@ -45,8 +55,11 @@ private:
     std::string m_playerName;
     std::optional<PlayerId> m_playerId;
 
-    StateUpdateHandler m_stateUpdateHandler;
+    StateUpdateHandler  m_stateUpdateHandler;
     std::optional<StateUpdate> m_lastStateUpdate;
+
+    MatchResultHandler  m_matchResultHandler;
+    std::optional<MatchResult> m_lastMatchResult;
 };
 
 } // namespace tetris::net

@@ -122,4 +122,17 @@ void NetworkHost::broadcast(const Message& msg)
     }
 }
 
+void NetworkHost::sendTo(PlayerId playerId, const Message& msg)
+{
+    auto it = m_players.find(playerId);
+    if (it == m_players.end()) {
+        return;
+    }
+
+    auto& info = it->second;
+    if (info.session && info.session->isConnected()) {
+        info.session->send(msg);
+    }
+}
+
 } // namespace tetris::net

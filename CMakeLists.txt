@@ -43,6 +43,8 @@ add_library(tetris_net
     src/network/HostGameSession.cpp
     src/network/StateUpdateMapper.cpp
     src/network/HostLoop.cpp
+    src/network/TcpSession.cpp    
+    src/network/TcpServer.cpp
 )
 
 target_include_directories(tetris_net
@@ -50,6 +52,10 @@ target_include_directories(tetris_net
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         tetris_core
 )
+
+if (WIN32)
+    target_link_libraries(tetris_net PRIVATE ws2_32)
+endif()
 
 # If later the network layer needs symbols from tetris_core
 # (e.g. converting GameState <-> DTOs), we can add:
@@ -86,6 +92,8 @@ if(BUILD_GUI)
         src/gui/NextPiecePanel.cpp
         src/gui/StartFrame.cpp
         src/gui/MultiplayerConfigDialog.cpp
+        src/gui/RemoteBoardPanel.cpp          
+        src/gui/MultiplayerFrame.cpp
     )
 
     target_include_directories(tetris_gui

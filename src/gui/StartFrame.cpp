@@ -4,6 +4,7 @@
 #include <wx/button.h>
 #include <wx/sizer.h>
 #include <wx/msgdlg.h>
+#include <wx/app.h>
 
 #include "gui/TetrisFrame.hpp"
 #include "gui/MultiplayerConfigDialog.hpp"
@@ -45,11 +46,17 @@ StartFrame::StartFrame(wxWindow* parent)
 
 void StartFrame::OnSinglePlayer(wxCommandEvent&)
 {
-    // Existing single-player frame
-    auto* frame = new TetrisFrame(nullptr, wxID_ANY, "Tetris - Single Player");
-    frame->Show(true);
-    frame->Centre();
-    this->Hide();
+    auto* gameFrame = new TetrisFrame(nullptr, wxID_ANY, "Tetris - Single Player");
+    gameFrame->Show(true);
+    gameFrame->Centre();
+
+    // Make the game frame the new top window so that when it closes,
+    // the application knows it can terminate.
+    wxTheApp->SetTopWindow(gameFrame);
+
+    // Destroy the start frame instead of just hiding it,
+    // so we don't keep a hidden, zombie window around.
+    this->Destroy();
 }
 
 void StartFrame::OnMultiplayer(wxCommandEvent&)

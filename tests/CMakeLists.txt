@@ -4,6 +4,12 @@ set(TEST_SOURCES
     test_game_state.cpp
     test_controller.cpp
     test_network_serialization.cpp
+    test_time_attack_rules.cpp
+    test_network_client.cpp 
+    test_network_host.cpp
+    test_shared_turn_rules.cpp 
+    test_host_game_session.cpp
+    test_state_update_mapper.cpp
 )
 
 add_executable(tetris_tests

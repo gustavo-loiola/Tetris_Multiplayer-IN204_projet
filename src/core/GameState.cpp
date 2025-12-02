@@ -49,6 +49,7 @@ void GameState::reset() {
     activeTetromino_.reset();
     nextTetromino_.reset();
     status_ = GameStatus::NotStarted;
+    lockedPieces_ = 0;  // reset locked pieces counter
 }
 
 bool GameState::tick() {
@@ -160,6 +161,9 @@ void GameState::lockActiveTetrominoAndProcessLines() {
         scoreManager_.addLinesCleared(lines, levelManager_.level());
         levelManager_.onLinesCleared(lines);
     }
+
+    ++lockedPieces_;
+    
 }
 
 bool GameState::tryMove(int dRow, int dCol) {

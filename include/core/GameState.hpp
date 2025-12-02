@@ -49,6 +49,8 @@ public:
 
     int gravityIntervalMs() const noexcept;
 
+    // number of times a piece has been locked (since last reset).
+    std::uint64_t lockedPieces() const noexcept { return lockedPieces_; }
 private:
     Board board_;
     TetrominoFactory factory_;
@@ -59,6 +61,9 @@ private:
     std::optional<Tetromino> nextTetromino_;
 
     GameStatus status_{GameStatus::NotStarted};
+
+    // monotonic counter of locked tetrominoes.
+    std::uint64_t lockedPieces_{0};
 
     bool spawnNewTetromino();
     void lockActiveTetrominoAndProcessLines();

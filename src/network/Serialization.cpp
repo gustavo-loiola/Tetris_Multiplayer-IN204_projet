@@ -33,6 +33,17 @@ namespace {
         }
         return out;
     }
+
+    // Helper to split a string by a single character delimiter (no escaping inside).
+    std::vector<std::string> splitSimple(const std::string& s, char delim) {
+        std::vector<std::string> parts;
+        std::string current;
+        std::istringstream is(s);
+        while (std::getline(is, current, delim)) {
+            parts.push_back(current);
+        }
+        return parts;
+    }
 }
 
 std::string serialize(const Message& msg)
@@ -71,10 +82,35 @@ std::string serialize(const Message& msg)
         break;
     }
     case MessageKind::StateUpdate: {
-        // For Week 2 you can keep this simple:
-        // send only minimal fields, or even leave unimplemented.
-        // I'll still put a TODO here intentionally.
-        os << "STATE_UPDATE;TODO";
+        os << "STATE_UPDATE;";
+        const auto& m = std::get<StateUpdate>(msg.payload);
+
+        // serverTick;playerCount
+        os << m.serverTick << ';' << m.players.size();
+
+        // then each player
+        for (const auto& p : m.players) {
+            os << ';'
+               << p.id << ';'
+               << escape(p.name) << ';'
+               << p.score << ';'
+               << p.level << ';'
+               << (p.isAlive ? 1 : 0) << ';'
+               << p.board.width << ';'
+               << p.board.height << ';';
+
+            // cells: occupied:colorIndex,occupied:colorIndex,...
+            const auto cellCount = static_cast<std::size_t>(
+                std::max(0, p.board.width) * std::max(0, p.board.height)
+            );
+            for (std::size_t i = 0; i < cellCount; ++i) {
+                if (i > 0) {
+                    os << ',';
+                }
+                const auto& cell = p.board.cells[i];
+                os << (cell.occupied ? 1 : 0) << ':' << cell.colorIndex;
+            }
+        }
         break;
     }
     case MessageKind::MatchResult: {
@@ -187,9 +223,79 @@ std::optional<Message> deserialize(const std::string& line)
         msg.payload = std::move(payload);
         return msg;
     } else if (type == "STATE_UPDATE") {
-        // Same story: can be fleshed out later.
-        // For now, treat as unsupported.
-        return std::nullopt;
+        std::string tickStr, countStr;
+        if (!std::getline(is, tickStr, ';')) return std::nullopt;
+        if (!std::getline(is, countStr, ';')) return std::nullopt;
+
+        StateUpdate update;
+        update.serverTick = static_cast<Tick>(std::stoull(tickStr));
+        const auto playerCount = static_cast<std::size_t>(std::stoul(countStr));
+
+        update.players.reserve(playerCount);
+
+        for (std::size_t i = 0; i < playerCount; ++i) {
+            std::string idStr, nameStr, scoreStr, levelStr, aliveStr, wStr, hStr, cellsStr;
+
+            if (!std::getline(is, idStr, ';'))    return std::nullopt;
+            if (!std::getline(is, nameStr, ';'))  return std::nullopt;
+            if (!std::getline(is, scoreStr, ';')) return std::nullopt;
+            if (!std::getline(is, levelStr, ';')) return std::nullopt;
+            if (!std::getline(is, aliveStr, ';')) return std::nullopt;
+            if (!std::getline(is, wStr, ';'))     return std::nullopt;
+            if (!std::getline(is, hStr, ';'))     return std::nullopt;
+
+            // Cell data: either up to next ';' or end of line (getline handles both).
+            if (!std::getline(is, cellsStr, ';')) {
+                // For the last player, this still succeeds: it just reads to end.
+                // If it truly fails (no data at all), treat as error.
+                return std::nullopt;
+            }
+
+            PlayerStateDTO dto;
+            dto.id       = static_cast<PlayerId>(std::stoul(idStr));
+            dto.name     = unescape(nameStr);
+            dto.score    = std::stoi(scoreStr);
+            dto.level    = std::stoi(levelStr);
+            dto.isAlive  = (std::stoi(aliveStr) != 0);
+            dto.board.width  = std::stoi(wStr);
+            dto.board.height = std::stoi(hStr);
+
+            const int w = dto.board.width;
+            const int h = dto.board.height;
+            const std::size_t expectedCells =
+                (w > 0 && h > 0) ? static_cast<std::size_t>(w) * static_cast<std::size_t>(h) : 0;
+
+            dto.board.cells.clear();
+
+            if (expectedCells > 0) {
+                auto tokens = splitSimple(cellsStr, ',');
+                if (tokens.size() != expectedCells) {
+                    // Protocol error: mismatch between claimed board size and cell count.
+                    return std::nullopt;
+                }
+
+                dto.board.cells.reserve(expectedCells);
+                for (const auto& token : tokens) {
+                    const auto pos = token.find(':');
+                    if (pos == std::string::npos) {
+                        return std::nullopt;
+                    }
+                    const auto occStr   = token.substr(0, pos);
+                    const auto colorStr = token.substr(pos + 1);
+
+                    BoardCellDTO cell;
+                    cell.occupied  = (std::stoi(occStr) != 0);
+                    cell.colorIndex = std::stoi(colorStr);
+                    dto.board.cells.push_back(cell);
+                }
+            }
+
+            update.players.push_back(std::move(dto));
+        }
+
+        msg.kind = MessageKind::StateUpdate;
+        msg.payload = std::move(update);
+        return msg;
     }
 
     return std::nullopt;

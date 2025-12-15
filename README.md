@@ -73,6 +73,12 @@ cmake ..
 cmake --build .
 ```
 
+```bash
+mkdir build
+cd build
+cmake -G "MinGW Makefiles" ..
+```
+
 ### **Run – Single Player**
 
 ```bash

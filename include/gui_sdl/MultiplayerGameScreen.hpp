@@ -2,9 +2,11 @@
 
 #include "gui_sdl/Screen.hpp"
 #include "network/MultiplayerConfig.hpp"
-#include "network/MessageTypes.hpp"
+#include "core/GameState.hpp"
+#include "core/Types.hpp"
+#include "controller/GameController.hpp"
 
-#include <imgui.h>      // <-- FIX 1: brings ImDrawList, ImVec2, etc.
+#include <imgui.h> // <-- necessário para ImDrawList / ImU32 / ImVec2
 #include <optional>
 
 namespace tetris::gui_sdl {
@@ -20,36 +22,52 @@ public:
 private:
     tetris::net::MultiplayerConfig cfg_;
 
-    std::optional<tetris::net::StateUpdate> lastUpdate_;
+    // TimeAttack: 2 estados independentes
+    tetris::core::GameState localGame_;
+    tetris::controller::GameController localCtrl_;
 
-    // UI-first identity (later: set from JoinAccept)
-    tetris::net::PlayerId localId_{1};
+    tetris::core::GameState oppGame_;
+    tetris::controller::GameController oppCtrl_;
 
-    // Fake simulation for visuals
-    tetris::net::Tick fakeTick_{0};
-    float fakeAccumulator_{0.0f};
+    // SharedTurns: 1 estado compartilhado
+    tetris::core::GameState sharedGame_;
+    tetris::controller::GameController sharedCtrl_;
 
-    // Helpers
-    void ensureFakeUpdate();
-    void stepFakeWorld(float dtSeconds);
+    float oppInputAcc_ = 0.0f;
 
-    void renderTopBar(Application& app, int w);
+    void dispatchLocalAction(tetris::core::GameState& gs,
+                             tetris::controller::GameController& gc,
+                             SDL_Keycode key);
+
+    void stepOpponentAI(float dtSeconds);
+
+    // Rendering helpers (ASSINATURAS DEVEM BATER COM O .CPP)
+    void drawBoardFromGame(ImDrawList* dl,
+                           const tetris::core::GameState& gs,
+                           ImVec2 topLeft,
+                           float cell,
+                           bool drawBorder,
+                           bool drawActive) const;
+
+    void renderTopBar(Application& app, int w, int h) const;
     void renderTimeAttackLayout(Application& app, int w, int h);
     void renderSharedTurnsLayout(Application& app, int w, int h);
 
-    // FIX 2: signature must match the .cpp exactly (5 args)
-    void drawBoardDTO(ImDrawList* dl,
-                      const tetris::net::BoardDTO& board,
-                      ImVec2 topLeft,
-                      float cellPx,
-                      bool drawGrid);
+    static ImU32 colorForType(tetris::core::TetrominoType t);
 
-    const tetris::net::PlayerStateDTO* findPlayer(tetris::net::PlayerId id) const;
-    const tetris::net::PlayerStateDTO* findOpponent() const;
+    // --- Hold-to-repeat (same feel as SinglePlayer) ---
+    float softDropHoldAccSec_ = 0.0f;
+    float leftHoldSec_ = 0.0f;
+    float rightHoldSec_ = 0.0f;
+    float leftRepeatAccSec_ = 0.0f;
+    float rightRepeatAccSec_ = 0.0f;
 
-    static float clampf(float v, float lo, float hi) {
-        return (v < lo) ? lo : (v > hi ? hi : v);
-    }
+    // tuning (match SinglePlayerScreen values)
+    float softDropRepeatSec_ = 0.05f; // 20 Hz
+    float sideDasSec_ = 0.16f;        // delay before sideways repeat
+    float sideArrSec_ = 0.05f;        // sideways repeat rate
+
+    void applyHoldInputs(float dtSeconds);
 };
 
 } // namespace tetris::gui_sdl

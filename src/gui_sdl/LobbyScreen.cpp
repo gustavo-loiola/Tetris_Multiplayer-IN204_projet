@@ -80,10 +80,21 @@ void LobbyScreen::render(Application& app)
 
     ImGui::SameLine();
 
+    if (ImGui::Button("Start (UI Test)", ImVec2(160, 0))) {
+        app.setScreen(std::make_unique<MultiplayerGameScreen>(cfg_));
+        ImGui::End();
+        return;
+    }
+
+    ImGui::SameLine();
+
     ImGui::BeginDisabled(!canStart);
     if (ImGui::Button("Start Match", ImVec2(160, 0))) {
         app.setScreen(std::make_unique<MultiplayerGameScreen>(cfg_));
+        ImGui::End();
+        return;
     }
+
     ImGui::EndDisabled();
 
     ImGui::End();

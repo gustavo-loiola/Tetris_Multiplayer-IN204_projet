@@ -3,10 +3,14 @@
 #include <imgui.h>
 #include <algorithm>
 #include <random>
+#include <mutex>
 
 #include "gui_sdl/Application.hpp"
 #include "gui_sdl/StartScreen.hpp"
 #include "controller/InputAction.hpp"
+
+#include "network/NetworkHost.hpp"
+#include "network/NetworkClient.hpp"
 
 namespace tetris::gui_sdl {
 
@@ -14,23 +18,14 @@ static float clampf(float v, float a, float b) {
     return std::max(a, std::min(b, v));
 }
 
-ImU32 MultiplayerGameScreen::colorForType(tetris::core::TetrominoType type)
-{
-    using tetris::core::TetrominoType;
-    switch (type) {
-        case TetrominoType::I: return IM_COL32(  0, 255, 255, 255);
-        case TetrominoType::O: return IM_COL32(255, 255,   0, 255);
-        case TetrominoType::T: return IM_COL32(160,  32, 240, 255);
-        case TetrominoType::J: return IM_COL32(  0,   0, 255, 255);
-        case TetrominoType::L: return IM_COL32(255, 165,   0, 255);
-        case TetrominoType::S: return IM_COL32(  0, 255,   0, 255);
-        case TetrominoType::Z: return IM_COL32(255,   0,   0, 255);
-    }
-    return IM_COL32(200, 200, 200, 255);
-}
+// ------------------ ctor ------------------
 
-MultiplayerGameScreen::MultiplayerGameScreen(const tetris::net::MultiplayerConfig& cfg)
+MultiplayerGameScreen::MultiplayerGameScreen(const tetris::net::MultiplayerConfig& cfg,
+                                             std::shared_ptr<tetris::net::NetworkHost> host,
+                                             std::shared_ptr<tetris::net::NetworkClient> client)
     : cfg_(cfg)
+    , host_(std::move(host))
+    , client_(std::move(client))
     , localGame_(20, 10, 0)
     , localCtrl_(localGame_)
     , oppGame_(20, 10, 0)
@@ -38,15 +33,74 @@ MultiplayerGameScreen::MultiplayerGameScreen(const tetris::net::MultiplayerConfi
     , sharedGame_(20, 10, 0)
     , sharedCtrl_(sharedGame_)
 {
-    // start all games (we will use only the ones needed per mode)
-    localGame_.start();
-    localCtrl_.resetTiming();
+    // We are "host/offline" if we are NOT a network client
+    isHost_ = (client_ == nullptr); 
 
-    oppGame_.start();
-    oppCtrl_.resetTiming();
+    // If we are a client, ensure we have started join handshake somewhere.
+    // (Safe even if already joined)
+    if (client_) {
+        client_->setStateUpdateHandler([this](const tetris::net::StateUpdate& s) {
+            std::lock_guard<std::mutex> lock(stateMutex_);
+            lastState_ = s;
+        });
+        if (!client_->isJoined()) client_->start();
+    }
 
-    sharedGame_.start();
-    sharedCtrl_.resetTiming();
+    // If host exists, start match immediately for testing
+    if (host_ && cfg_.isHost && !host_->isMatchStarted()) {
+        host_->startMatch();
+    }
+
+    // Core starts (used by host/offline)
+    localGame_.start();  localCtrl_.resetTiming();
+    oppGame_.start();    oppCtrl_.resetTiming();
+    sharedGame_.start(); sharedCtrl_.resetTiming();
+}
+
+// ------------------ input mapping ------------------
+
+std::optional<tetris::controller::InputAction>
+MultiplayerGameScreen::actionFromKey(SDL_Keycode key)
+{
+    using tetris::controller::InputAction;
+    switch (key) {
+        case SDLK_LEFT:
+        case SDLK_a: return InputAction::MoveLeft;
+
+        case SDLK_RIGHT:
+        case SDLK_d: return InputAction::MoveRight;
+
+        case SDLK_DOWN:
+        case SDLK_s: return InputAction::SoftDrop;
+
+        case SDLK_SPACE: return InputAction::HardDrop;
+
+        case SDLK_z:
+        case SDLK_q: return InputAction::RotateCCW;
+
+        case SDLK_x:
+        case SDLK_e: return InputAction::RotateCW;
+
+        case SDLK_p:
+        case SDLK_ESCAPE: return InputAction::PauseResume;
+
+        default: return std::nullopt;
+    }
+}
+
+void MultiplayerGameScreen::sendOrApplyAction(tetris::core::GameState& gs,
+                                             tetris::controller::GameController& gc,
+                                             tetris::controller::InputAction action)
+{
+    // Client authoritative: send to host
+    if (client_) {
+        client_->sendInput(action, static_cast<tetris::net::Tick>(clientTick_++));
+        return;
+    }
+
+    // Host/offline: apply locally
+    (void)gs;
+    gc.handleAction(action);
 }
 
 void MultiplayerGameScreen::handleEvent(Application& app, const SDL_Event& e)
@@ -56,13 +110,12 @@ void MultiplayerGameScreen::handleEvent(Application& app, const SDL_Event& e)
 
     const SDL_Keycode key = e.key.keysym.sym;
 
-    // Always allow returning to menu
     if (key == SDLK_BACKSPACE) {
         app.setScreen(std::make_unique<StartScreen>());
         return;
     }
 
-    // Determine which local GameState/Controller is active
+    // choose which local state/controller is "ours"
     tetris::core::GameState* gs = nullptr;
     tetris::controller::GameController* gc = nullptr;
 
@@ -73,93 +126,56 @@ void MultiplayerGameScreen::handleEvent(Application& app, const SDL_Event& e)
         gs = &sharedGame_;
         gc = &sharedCtrl_;
     }
-
     if (!gs || !gc) return;
 
-    // Allow pause/resume even if not Running
-    if (key == SDLK_p || key == SDLK_ESCAPE) {
-        gc->handleAction(tetris::controller::InputAction::PauseResume);
+    auto act = actionFromKey(key);
+    if (!act) return;
+
+    // Pause/resume should work anytime (host applies / client sends)
+    if (*act == tetris::controller::InputAction::PauseResume) {
+        sendOrApplyAction(*gs, *gc, *act);
         return;
     }
 
-    // Don't allow gameplay actions while paused or game over
-    if (gs->status() != tetris::core::GameStatus::Running)
+    // gameplay only when running (host has local status; client will still send holds in update)
+    if (!client_ && gs->status() != tetris::core::GameStatus::Running)
         return;
 
-    // First-tap action (hold repeats are handled in update/applyHoldInputs)
-    dispatchLocalAction(*gs, *gc, key);
+    // first tap
+    sendOrApplyAction(*gs, *gc, *act);
 }
 
-void MultiplayerGameScreen::dispatchLocalAction(tetris::core::GameState& gs,
-                                               tetris::controller::GameController& gc,
-                                               SDL_Keycode key)
+// ------------------ host consumes remote inputs ------------------
+
+void MultiplayerGameScreen::applyRemoteInputsHost()
 {
-    using tetris::controller::InputAction;
+    if (!host_ || !cfg_.isHost) return;
 
-    // Ignore movement when not running (but allow pause toggle)
-    if (gs.status() != tetris::core::GameStatus::Running) {
-        if (key == SDLK_p || key == SDLK_ESCAPE)
-            gc.handleAction(InputAction::PauseResume);
-        return;
-    }
+    host_->poll();
+    auto inputs = host_->consumeInputQueue();
+    if (inputs.empty()) return;
 
-    switch (key) {
-        // move (arrows OR A/D)
-        case SDLK_LEFT:
-        case SDLK_a:
-            gc.handleAction(InputAction::MoveLeft);
-            break;
-
-        case SDLK_RIGHT:
-        case SDLK_d:
-            gc.handleAction(InputAction::MoveRight);
-            break;
-
-        // soft drop (Down OR S)
-        case SDLK_DOWN:
-        case SDLK_s:
-            gc.handleAction(InputAction::SoftDrop);
-            break;
-
-        case SDLK_SPACE:
-            gc.handleAction(InputAction::HardDrop);
-            break;
-
-        case SDLK_z:
-        case SDLK_q:
-            gc.handleAction(InputAction::RotateCCW);
-            break;
-
-        case SDLK_x:
-        case SDLK_e:
-            gc.handleAction(InputAction::RotateCW);
-            break;
-
-        case SDLK_p:
-        case SDLK_ESCAPE:
-            gc.handleAction(InputAction::PauseResume);
-            break;
-
-        default:
-            break;
+    for (const auto& m : inputs) {
+        // In TimeAttack: remote controls opponent game
+        if (cfg_.mode == tetris::net::GameMode::TimeAttack) {
+            oppCtrl_.handleAction(m.action);
+        } else {
+            // SharedTurns: both affect the same shared board
+            sharedCtrl_.handleAction(m.action);
+        }
     }
 }
+
+// ------------------ offline AI (optional) ------------------
 
 void MultiplayerGameScreen::stepOpponentAI(float dtSeconds)
 {
-    // Only for TimeAttack test: generate sparse inputs so opponent “plays”.
-    if (cfg_.mode != tetris::net::GameMode::TimeAttack)
-        return;
-
-    if (oppGame_.status() != tetris::core::GameStatus::Running)
-        return;
+    if (host_ || client_) return;
+    if (cfg_.mode != tetris::net::GameMode::TimeAttack) return;
+    if (oppGame_.status() != tetris::core::GameStatus::Running) return;
 
     oppInputAcc_ += dtSeconds;
-
-    // every ~0.20s try one input
-    if (oppInputAcc_ < 0.20f)
-        return;
-
+    if (oppInputAcc_ < 0.20f) return;
     oppInputAcc_ = 0.0f;
 
     static std::mt19937 rng{std::random_device{}()};
@@ -167,33 +183,281 @@ void MultiplayerGameScreen::stepOpponentAI(float dtSeconds)
     int r = dist(rng);
 
     using tetris::controller::InputAction;
-    // simple bias: more left/right, occasional rotations, rare hard drop
     if (r <= 3) oppCtrl_.handleAction(InputAction::MoveLeft);
     else if (r <= 7) oppCtrl_.handleAction(InputAction::MoveRight);
     else if (r == 8) oppCtrl_.handleAction(InputAction::RotateCW);
     else oppCtrl_.handleAction(InputAction::SoftDrop);
 }
 
+// ------------------ DTO mapping (host snapshot) ------------------
+
+int MultiplayerGameScreen::colorIndexForTetromino(tetris::core::TetrominoType t)
+{
+    // 1..7 for I,O,T,J,L,S,Z. 0 = grey
+    using TT = tetris::core::TetrominoType;
+    switch (t) {
+        case TT::I: return 1;
+        case TT::O: return 2;
+        case TT::T: return 3;
+        case TT::J: return 4;
+        case TT::L: return 5;
+        case TT::S: return 6;
+        case TT::Z: return 7;
+    }
+    return 0;
+}
+
+tetris::net::BoardDTO
+MultiplayerGameScreen::makeBoardDTOFromGame(const tetris::core::GameState& gs, bool includeActive)
+{
+    tetris::net::BoardDTO dto;
+    const auto& b = gs.board();
+
+    dto.width  = b.cols();
+    dto.height = b.rows();
+    dto.cells.resize(static_cast<std::size_t>(dto.width * dto.height));
+
+    auto idx = [&](int r, int c) -> std::size_t {
+        return static_cast<std::size_t>(r * dto.width + c);
+    };
+
+    // Locked cells: occupied, but no color info in your core => grey (0)
+    for (int r = 0; r < dto.height; ++r) {
+        for (int c = 0; c < dto.width; ++c) {
+            auto& cell = dto.cells[idx(r,c)];
+            cell.occupied = (b.cell(r,c) == tetris::core::CellState::Filled);
+            cell.colorIndex = cell.occupied ? 0 : 0;
+        }
+    }
+
+    // Active piece: we can color it!
+    if (includeActive && gs.activeTetromino().has_value()) {
+        const auto& t = *gs.activeTetromino();
+        const int colIdx = colorIndexForTetromino(t.type());
+        for (const auto& blk : t.blocks()) {
+            if (blk.row < 0) continue;
+            if (blk.row >= dto.height || blk.col < 0 || blk.col >= dto.width) continue;
+            auto& cell = dto.cells[idx(blk.row, blk.col)];
+            cell.occupied = true;
+            cell.colorIndex = colIdx;
+        }
+    }
+
+    return dto;
+}
+
+void MultiplayerGameScreen::broadcastSnapshotHost()
+{
+    if (!host_ || !cfg_.isHost) return;
+
+    tetris::net::StateUpdate su;
+    su.serverTick = serverTick_;
+
+    if (cfg_.mode == tetris::net::GameMode::TimeAttack) {
+        // Player 1 = host(local), Player 2 = remote(opponent)
+        tetris::net::PlayerStateDTO p1;
+        p1.id = 1;
+        p1.name = "Host";
+        p1.board = makeBoardDTOFromGame(localGame_, true);
+        p1.score = static_cast<int>(localGame_.score());
+        p1.level = localGame_.level();
+        p1.isAlive = (localGame_.status() != tetris::core::GameStatus::GameOver);
+
+        tetris::net::PlayerStateDTO p2;
+        p2.id = 2;
+        p2.name = "Client";
+        p2.board = makeBoardDTOFromGame(oppGame_, true);
+        p2.score = static_cast<int>(oppGame_.score());
+        p2.level = oppGame_.level();
+        p2.isAlive = (oppGame_.status() != tetris::core::GameStatus::GameOver);
+
+        su.players.push_back(std::move(p1));
+        su.players.push_back(std::move(p2));
+    } else {
+        // SharedTurns: same board snapshot for both
+        auto board = makeBoardDTOFromGame(sharedGame_, true);
+
+        tetris::net::PlayerStateDTO p1;
+        p1.id = 1;
+        p1.name = "Host";
+        p1.board = board;
+        p1.score = static_cast<int>(sharedGame_.score());
+        p1.level = sharedGame_.level();
+        p1.isAlive = (sharedGame_.status() != tetris::core::GameStatus::GameOver);
+
+        tetris::net::PlayerStateDTO p2 = p1;
+        p2.id = 2;
+        p2.name = "Client";
+
+        su.players.push_back(std::move(p1));
+        su.players.push_back(std::move(p2));
+    }
+
+    tetris::net::Message msg;
+    msg.kind = tetris::net::MessageKind::StateUpdate;
+    msg.payload = std::move(su);
+
+    host_->broadcast(msg);
+}
+
+// ------------------ update loop ------------------
+
 void MultiplayerGameScreen::update(Application&, float dtSeconds)
 {
-    // convert dt to ms for your controller
+    // CLIENT: does NOT run physics. Only sends inputs (hold) and renders snapshots received.
+    if (!isHost_) {
+        applyHoldInputs(dtSeconds);
+        return;
+    }
+
+    // HOST/OFFLINE: run physics + apply network inputs
     const int ms = static_cast<int>(dtSeconds * 1000.0f + 0.5f);
     auto dur = tetris::controller::GameController::Duration{ms};
 
+    // 1) host consumes remote inputs (if network host exists)
+    applyRemoteInputsHost();
+
+    // 2) run physics
     if (cfg_.mode == tetris::net::GameMode::TimeAttack) {
         localCtrl_.update(dur);
         oppCtrl_.update(dur);
 
-        // UI-only opponent simulation (if you still have it)
+        // offline only (no host/client):
         stepOpponentAI(dtSeconds);
     } else {
         sharedCtrl_.update(dur);
     }
 
-    // IMPORTANT: hold-to-repeat (Down/S + Left/Right/A/D)
-    // This must exist as a method on MultiplayerGameScreen.
+    // 3) local hold-to-repeat (host/offline)
     applyHoldInputs(dtSeconds);
+
+    // 4) broadcast snapshot (host only)
+    if (host_ && cfg_.isHost) {
+        // simple tick
+        serverTick_++;
+
+        // send at ~20 Hz (every 50 ms)
+        snapshotAccSec_ += dtSeconds;
+        if (snapshotAccSec_ >= 0.05f) {
+            snapshotAccSec_ = 0.0f;
+            broadcastSnapshotHost();
+        }
+    }
 }
+
+// ------------------ rendering helpers ------------------
+
+ImU32 MultiplayerGameScreen::colorFromIndex(int idx)
+{
+    // 0 grey, 1..7 = I,O,T,J,L,S,Z
+    switch (idx) {
+        case 1: return IM_COL32(  0, 255, 255, 255); // I
+        case 2: return IM_COL32(255, 255,   0, 255); // O
+        case 3: return IM_COL32(160,  32, 240, 255); // T
+        case 4: return IM_COL32(  0,   0, 255, 255); // J
+        case 5: return IM_COL32(255, 165,   0, 255); // L
+        case 6: return IM_COL32(  0, 255,   0, 255); // S
+        case 7: return IM_COL32(255,   0,   0, 255); // Z
+        default: return IM_COL32(120, 120, 130, 255);
+    }
+}
+
+void MultiplayerGameScreen::drawBoardDTO(ImDrawList* dl, const tetris::net::BoardDTO& board,
+                                        ImVec2 topLeft, float cell, bool border) const
+{
+    const int rows = board.height;
+    const int cols = board.width;
+
+    ImVec2 size(cols * cell, rows * cell);
+    ImU32 bg = IM_COL32(12, 12, 16, 255);
+    ImU32 grid = IM_COL32(40, 40, 55, 255);
+
+    dl->AddRectFilled(topLeft, ImVec2(topLeft.x + size.x, topLeft.y + size.y), bg, 6.0f);
+
+    for (int r = 0; r <= rows; ++r) {
+        float y = topLeft.y + r * cell;
+        dl->AddLine(ImVec2(topLeft.x, y), ImVec2(topLeft.x + size.x, y), grid);
+    }
+    for (int c = 0; c <= cols; ++c) {
+        float x = topLeft.x + c * cell;
+        dl->AddLine(ImVec2(x, topLeft.y), ImVec2(x, topLeft.y + size.y), grid);
+    }
+
+    auto idx = [&](int r, int c)->std::size_t {
+        return static_cast<std::size_t>(r * cols + c);
+    };
+
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            const auto& cellDto = board.cells[idx(r,c)];
+            if (!cellDto.occupied) continue;
+            ImU32 col = colorFromIndex(cellDto.colorIndex);
+            ImVec2 p0(topLeft.x + c * cell + 1, topLeft.y + r * cell + 1);
+            ImVec2 p1(p0.x + cell - 2, p0.y + cell - 2);
+            dl->AddRectFilled(p0, p1, col);
+            dl->AddRect(p0, p1, IM_COL32(20, 20, 20, 255));
+        }
+    }
+
+    if (border) {
+        dl->AddRect(topLeft, ImVec2(topLeft.x + size.x, topLeft.y + size.y),
+                    IM_COL32(120,120,130,255), 6.0f, 0, 2.0f);
+    }
+}
+
+void MultiplayerGameScreen::drawBoardFromGame(ImDrawList* dl, const tetris::core::GameState& gs,
+                                             ImVec2 topLeft, float cell, bool border, bool drawActive) const
+{
+    // Reuse your previous drawing style: locked grey + active colored
+    const auto& b = gs.board();
+    const int rows = b.rows();
+    const int cols = b.cols();
+
+    ImVec2 size(cols * cell, rows * cell);
+    ImU32 bg = IM_COL32(12, 12, 16, 255);
+    ImU32 grid = IM_COL32(40, 40, 55, 255);
+    ImU32 locked = IM_COL32(90, 90, 95, 255);
+
+    dl->AddRectFilled(topLeft, ImVec2(topLeft.x + size.x, topLeft.y + size.y), bg, 6.0f);
+
+    for (int r = 0; r <= rows; ++r) {
+        float y = topLeft.y + r * cell;
+        dl->AddLine(ImVec2(topLeft.x, y), ImVec2(topLeft.x + size.x, y), grid);
+    }
+    for (int c = 0; c <= cols; ++c) {
+        float x = topLeft.x + c * cell;
+        dl->AddLine(ImVec2(x, topLeft.y), ImVec2(x, topLeft.y + size.y), grid);
+    }
+
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            if (b.cell(r, c) == tetris::core::CellState::Filled) {
+                ImVec2 p0(topLeft.x + c * cell + 1, topLeft.y + r * cell + 1);
+                ImVec2 p1(p0.x + cell - 2, p0.y + cell - 2);
+                dl->AddRectFilled(p0, p1, locked);
+            }
+        }
+    }
+
+    if (drawActive && gs.activeTetromino().has_value()) {
+        const auto& t = *gs.activeTetromino();
+        ImU32 col = colorFromIndex(colorIndexForTetromino(t.type()));
+        for (const auto& blk : t.blocks()) {
+            if (blk.row < 0) continue;
+            ImVec2 p0(topLeft.x + blk.col * cell + 1, topLeft.y + blk.row * cell + 1);
+            ImVec2 p1(p0.x + cell - 2, p0.y + cell - 2);
+            dl->AddRectFilled(p0, p1, col);
+            dl->AddRect(p0, p1, IM_COL32(20, 20, 20, 255));
+        }
+    }
+
+    if (border) {
+        dl->AddRect(topLeft, ImVec2(topLeft.x + size.x, topLeft.y + size.y),
+                    IM_COL32(120,120,130,255), 6.0f, 0, 2.0f);
+    }
+}
+
+// ------------------ render ------------------
 
 void MultiplayerGameScreen::render(Application& app)
 {
@@ -210,149 +474,99 @@ void MultiplayerGameScreen::render(Application& app)
 
 void MultiplayerGameScreen::renderTopBar(Application& app, int w, int h) const
 {
-    (void)app;
+    (void)app; (void)h;
+
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(w - 20), 48), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(w - 20), 52), ImGuiCond_Always);
 
-    ImGuiWindowFlags flags =
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoCollapse;
-
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
     ImGui::Begin("##mp_topbar", nullptr, flags);
 
-    if (cfg_.mode == tetris::net::GameMode::TimeAttack) {
-        ImGui::Text("Mode: Time Attack  |  Limit: %us", cfg_.timeLimitSeconds);
-    } else {
-        ImGui::Text("Mode: Shared Turns  |  Pieces/turn: %u", cfg_.piecesPerTurn);
-    }
+    ImGui::Text("Role: %s  |  Network: %s",
+                cfg_.isHost ? "Host" : "Client",
+                (host_ || client_) ? "ON" : "OFF");
 
     ImGui::SameLine();
-    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 170);
+    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 120);
     ImGui::TextUnformatted("Backspace: Menu");
 
     ImGui::End();
 }
 
-void MultiplayerGameScreen::drawBoardFromGame(ImDrawList* dl,
-                                             const tetris::core::GameState& gs,
-                                             ImVec2 topLeft,
-                                             float cell,
-                                             bool drawBorder,
-                                             bool drawActive) const
-{
-    const auto& b = gs.board();
-    const int rows = b.rows();
-    const int cols = b.cols();
-
-    ImVec2 size(cols * cell, rows * cell);
-    ImU32 bg = IM_COL32(12, 12, 16, 255);
-    ImU32 grid = IM_COL32(40, 40, 55, 255);
-    ImU32 locked = IM_COL32(90, 90, 95, 255);
-
-    dl->AddRectFilled(topLeft, ImVec2(topLeft.x + size.x, topLeft.y + size.y), bg, 6.0f);
-
-    // grid
-    for (int r = 0; r <= rows; ++r) {
-        float y = topLeft.y + r * cell;
-        dl->AddLine(ImVec2(topLeft.x, y), ImVec2(topLeft.x + size.x, y), grid);
-    }
-    for (int c = 0; c <= cols; ++c) {
-        float x = topLeft.x + c * cell;
-        dl->AddLine(ImVec2(x, topLeft.y), ImVec2(x, topLeft.y + size.y), grid);
-    }
-
-    // locked cells (board has no color info => grey)
-    for (int r = 0; r < rows; ++r) {
-        for (int c = 0; c < cols; ++c) {
-            if (b.cell(r, c) == tetris::core::CellState::Filled) {
-                ImVec2 p0(topLeft.x + c * cell + 1, topLeft.y + r * cell + 1);
-                ImVec2 p1(p0.x + cell - 2, p0.y + cell - 2);
-                dl->AddRectFilled(p0, p1, locked);
-            }
-        }
-    }
-
-    // active piece
-    if (drawActive && gs.activeTetromino().has_value()) {
-        const auto& t = *gs.activeTetromino();
-        ImU32 col = colorForType(t.type());
-        for (const auto& block : t.blocks()) {
-            if (block.row < 0) continue;
-            ImVec2 p0(topLeft.x + block.col * cell + 1, topLeft.y + block.row * cell + 1);
-            ImVec2 p1(p0.x + cell - 2, p0.y + cell - 2);
-            dl->AddRectFilled(p0, p1, col);
-            dl->AddRect(p0, p1, IM_COL32(20, 20, 20, 255));
-        }
-    }
-
-    if (drawBorder) {
-        dl->AddRect(topLeft, ImVec2(topLeft.x + size.x, topLeft.y + size.y), IM_COL32(120,120,130,255), 6.0f, 0, 2.0f);
-    }
-}
-
 void MultiplayerGameScreen::renderTimeAttackLayout(Application& app, int w, int h)
 {
     (void)app;
-
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
 
-    // layout
-    const float top = 68.0f;
+    const float top = 70.0f;
     const float margin = 18.0f;
 
     float availableW = static_cast<float>(w) - margin * 3.0f;
     float availableH = static_cast<float>(h) - top - margin;
 
-    // allocate scoreboard panel on the right
-    const float panelW = 300.0f;
+    const float panelW = 320.0f;
     const float boardsW = availableW - panelW - margin;
     const float boardW = boardsW * 0.5f - margin * 0.5f;
 
-    // compute cell size
-    const int cols = localGame_.board().cols();
-    const int rows = localGame_.board().rows();
+    int cols = 10, rows = 20;
     float cell = std::min(boardW / cols, availableH / rows);
     cell = clampf(cell, 16.0f, 42.0f);
 
     float boardPxW = cols * cell;
     float boardPxH = rows * cell;
 
-    // center boards block horizontally
     float x0 = (static_cast<float>(w) - (boardPxW * 2 + margin + panelW + margin)) * 0.5f;
     if (x0 < margin) x0 = margin;
 
     float y0 = top + (availableH - boardPxH) * 0.5f;
     if (y0 < top) y0 = top;
 
-    // labels + boards
+    // Decide data source: client -> DTO, else -> GameState
+    std::optional<tetris::net::StateUpdate> snap;
+    if (client_) {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        snap = lastState_;
+    }
+
     dl->AddText(ImVec2(x0, y0 - 22), IM_COL32_WHITE, "You");
     dl->AddText(ImVec2(x0 + boardPxW + margin, y0 - 22), IM_COL32_WHITE, "Opponent");
 
-    drawBoardFromGame(dl, localGame_, ImVec2(x0, y0), cell, true, true);
-    drawBoardFromGame(dl, oppGame_,   ImVec2(x0 + boardPxW + margin, y0), cell, true, true);
+    if (client_ && snap && snap->players.size() >= 2) {
+        // assume players[0]=host, players[1]=client (as sent)
+        // client sees itself on left for now (simple)
+        drawBoardDTO(dl, snap->players[1].board, ImVec2(x0, y0), cell, true);
+        drawBoardDTO(dl, snap->players[0].board, ImVec2(x0 + boardPxW + margin, y0), cell, true);
+    } else {
+        drawBoardFromGame(dl, localGame_, ImVec2(x0, y0), cell, true, true);
+        drawBoardFromGame(dl, oppGame_,   ImVec2(x0 + boardPxW + margin, y0), cell, true, true);
+    }
 
-    // scoreboard window
     float panelX = x0 + boardPxW * 2 + margin * 2;
     float panelY = y0;
+
     ImGui::SetNextWindowPos(ImVec2(panelX, panelY), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(panelW, boardPxH), ImGuiCond_Always);
 
-    ImGuiWindowFlags flags =
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoCollapse;
-
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
     ImGui::Begin("Scoreboard", nullptr, flags);
 
-    ImGui::Text("You: %llu", (unsigned long long)localGame_.score());
-    ImGui::Text("Opp: %llu", (unsigned long long)oppGame_.score());
-    ImGui::Separator();
-    ImGui::Text("Your level: %d", localGame_.level());
-    ImGui::Text("Opp  level: %d", oppGame_.level());
-    ImGui::Separator();
-    ImGui::TextDisabled("Offline test mode (core-driven).");
-    ImGui::TextDisabled("Later: StateUpdate from network.");
+    if (client_ && snap && snap->players.size() >= 2) {
+        ImGui::Text("You score: %d", snap->players[1].score);
+        ImGui::Text("Opp score: %d", snap->players[0].score);
+        ImGui::Separator();
+        ImGui::Text("You level: %d", snap->players[1].level);
+        ImGui::Text("Opp level: %d", snap->players[0].level);
+        ImGui::Separator();
+        ImGui::TextDisabled("Client rendering authoritative StateUpdate.");
+    } else {
+        ImGui::Text("You: %llu", (unsigned long long)localGame_.score());
+        ImGui::Text("Opp: %llu", (unsigned long long)oppGame_.score());
+        ImGui::Separator();
+        ImGui::Text("Your level: %d", localGame_.level());
+        ImGui::Text("Opp  level: %d", oppGame_.level());
+        ImGui::Separator();
+        ImGui::TextDisabled("Host/offline: core-driven.");
+    }
 
     ImGui::End();
 }
@@ -360,18 +574,15 @@ void MultiplayerGameScreen::renderTimeAttackLayout(Application& app, int w, int 
 void MultiplayerGameScreen::renderSharedTurnsLayout(Application& app, int w, int h)
 {
     (void)app;
-
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
 
-    const float top = 68.0f;
+    const float top = 70.0f;
     const float margin = 18.0f;
 
     float availableW = static_cast<float>(w) - margin * 2.0f;
-    float availableH = static_cast<float>(h) - top - margin * 2.0f - 120.0f; // reserve player cards
+    float availableH = static_cast<float>(h) - top - margin * 2.0f - 120.0f;
 
-    const int cols = sharedGame_.board().cols();
-    const int rows = sharedGame_.board().rows();
-
+    int cols = 10, rows = 20;
     float cell = std::min(availableW / cols, availableH / rows);
     cell = clampf(cell, 16.0f, 42.0f);
 
@@ -382,79 +593,96 @@ void MultiplayerGameScreen::renderSharedTurnsLayout(Application& app, int w, int
     float y0 = top + (availableH - boardPxH) * 0.5f;
     if (y0 < top) y0 = top;
 
-    dl->AddText(ImVec2(x0 + boardPxW * 0.5f - 80, y0 - 22), IM_COL32_WHITE, "Shared Board (offline test)");
-    drawBoardFromGame(dl, sharedGame_, ImVec2(x0, y0), cell, true, true);
+    std::optional<tetris::net::StateUpdate> snap;
+    if (client_) {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        snap = lastState_;
+    }
 
-    // bottom cards
+    dl->AddText(ImVec2(x0 + boardPxW * 0.5f - 70, y0 - 22), IM_COL32_WHITE, "Shared Board");
+
+    if (client_ && snap && !snap->players.empty()) {
+        // shared board is same for both; render first player's board
+        drawBoardDTO(dl, snap->players[0].board, ImVec2(x0, y0), cell, true);
+    } else {
+        drawBoardFromGame(dl, sharedGame_, ImVec2(x0, y0), cell, true, true);
+    }
+
+    // cards
     float cardY = y0 + boardPxH + margin;
     float cardH = 110.0f;
     float cardW = (static_cast<float>(w) - margin * 3.0f) * 0.5f;
 
-    ImGuiWindowFlags flags =
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoCollapse;
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
 
     ImGui::SetNextWindowPos(ImVec2(margin, cardY), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(cardW, cardH), ImGuiCond_Always);
     ImGui::Begin("You##shared", nullptr, flags);
-    ImGui::Text("Score: %llu", (unsigned long long)sharedGame_.score());
-    ImGui::Text("Level: %d", sharedGame_.level());
-    ImGui::TextDisabled("Ready: (UI-only)");
+
+    if (client_ && snap && snap->players.size() >= 2) {
+        ImGui::Text("Score: %d", snap->players[1].score);
+        ImGui::Text("Level: %d", snap->players[1].level);
+        ImGui::TextDisabled("Client (authoritative render).");
+    } else {
+        ImGui::Text("Score: %llu", (unsigned long long)sharedGame_.score());
+        ImGui::Text("Level: %d", sharedGame_.level());
+    }
     ImGui::End();
 
     ImGui::SetNextWindowPos(ImVec2(margin * 2 + cardW, cardY), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(cardW, cardH), ImGuiCond_Always);
     ImGui::Begin("Opponent##shared", nullptr, flags);
-    ImGui::Text("Score: %llu", (unsigned long long)sharedGame_.score());
-    ImGui::Text("Level: %d", sharedGame_.level());
-    ImGui::TextDisabled("Ready: (UI-only)");
+
+    if (client_ && snap && snap->players.size() >= 2) {
+        ImGui::Text("Score: %d", snap->players[0].score);
+        ImGui::Text("Level: %d", snap->players[0].level);
+        ImGui::TextDisabled("Opponent snapshot.");
+    } else {
+        ImGui::Text("Score: %llu", (unsigned long long)sharedGame_.score());
+        ImGui::Text("Level: %d", sharedGame_.level());
+        ImGui::TextDisabled("(will come from StateUpdate)");
+    }
     ImGui::End();
 }
 
+// ------------------ hold inputs (client sends / host applies) ------------------
+
 void MultiplayerGameScreen::applyHoldInputs(float dtSeconds)
 {
-    // Only apply holds if local game is running
     tetris::core::GameState* gs = nullptr;
     tetris::controller::GameController* gc = nullptr;
 
-    if (cfg_.mode == tetris::net::GameMode::TimeAttack) {
-        gs = &localGame_;
-        gc = &localCtrl_;
-    } else {
-        gs = &sharedGame_;
-        gc = &sharedCtrl_;
-    }
+    if (cfg_.mode == tetris::net::GameMode::TimeAttack) { gs = &localGame_; gc = &localCtrl_; }
+    else { gs = &sharedGame_; gc = &sharedCtrl_; }
 
     if (!gs || !gc) return;
 
-    if (gs->status() != tetris::core::GameStatus::Running) {
-        // reset holds when paused/gameover
-        softDropHoldAccSec_ = 0.0f;
-        leftHoldSec_ = rightHoldSec_ = 0.0f;
-        leftRepeatAccSec_ = rightRepeatAccSec_ = 0.0f;
-        return;
+    // Client: allow sending hold repeats even without local Running state
+    if (!client_) {
+        if (gs->status() != tetris::core::GameStatus::Running) {
+            softDropHoldAccSec_ = 0.0f;
+            leftHoldSec_ = rightHoldSec_ = 0.0f;
+            leftRepeatAccSec_ = rightRepeatAccSec_ = 0.0f;
+            return;
+        }
     }
 
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
 
-    // --- Soft drop hold (Down or S) ---
     const bool downHeld = (keys[SDL_SCANCODE_DOWN] != 0) || (keys[SDL_SCANCODE_S] != 0);
     if (!downHeld) {
         softDropHoldAccSec_ = 0.0f;
     } else {
         softDropHoldAccSec_ += dtSeconds;
         while (softDropHoldAccSec_ >= softDropRepeatSec_) {
-            gc->handleAction(tetris::controller::InputAction::SoftDrop);
+            sendOrApplyAction(*gs, *gc, tetris::controller::InputAction::SoftDrop);
             softDropHoldAccSec_ -= softDropRepeatSec_;
         }
     }
 
-    // --- Side hold (Left/Right or A/D) with DAS/ARR ---
     const bool leftHeld  = (keys[SDL_SCANCODE_LEFT] != 0) || (keys[SDL_SCANCODE_A] != 0);
     const bool rightHeld = (keys[SDL_SCANCODE_RIGHT] != 0) || (keys[SDL_SCANCODE_D] != 0);
 
-    // If both held, do nothing (prevents jitter)
     if (leftHeld && rightHeld) {
         leftHoldSec_ = rightHoldSec_ = 0.0f;
         leftRepeatAccSec_ = rightRepeatAccSec_ = 0.0f;
@@ -467,42 +695,32 @@ void MultiplayerGameScreen::applyHoldInputs(float dtSeconds)
         return;
     }
 
-    // Left repeating
     if (leftHeld) {
         leftHoldSec_ += dtSeconds;
-
         if (leftHoldSec_ >= sideDasSec_) {
             leftRepeatAccSec_ += dtSeconds;
             while (leftRepeatAccSec_ >= sideArrSec_) {
-                gc->handleAction(tetris::controller::InputAction::MoveLeft);
+                sendOrApplyAction(*gs, *gc, tetris::controller::InputAction::MoveLeft);
                 leftRepeatAccSec_ -= sideArrSec_;
             }
         } else {
             leftRepeatAccSec_ = 0.0f;
         }
-
-        // reset right
-        rightHoldSec_ = 0.0f;
-        rightRepeatAccSec_ = 0.0f;
+        rightHoldSec_ = 0.0f; rightRepeatAccSec_ = 0.0f;
     }
 
-    // Right repeating
     if (rightHeld) {
         rightHoldSec_ += dtSeconds;
-
         if (rightHoldSec_ >= sideDasSec_) {
             rightRepeatAccSec_ += dtSeconds;
             while (rightRepeatAccSec_ >= sideArrSec_) {
-                gc->handleAction(tetris::controller::InputAction::MoveRight);
+                sendOrApplyAction(*gs, *gc, tetris::controller::InputAction::MoveRight);
                 rightRepeatAccSec_ -= sideArrSec_;
             }
         } else {
             rightRepeatAccSec_ = 0.0f;
         }
-
-        // reset left
-        leftHoldSec_ = 0.0f;
-        leftRepeatAccSec_ = 0.0f;
+        leftHoldSec_ = 0.0f; leftRepeatAccSec_ = 0.0f;
     }
 }
 

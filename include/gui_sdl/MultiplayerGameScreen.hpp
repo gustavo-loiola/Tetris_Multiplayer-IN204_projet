@@ -2,58 +2,101 @@
 
 #include "gui_sdl/Screen.hpp"
 #include "network/MultiplayerConfig.hpp"
+#include "network/MessageTypes.hpp"
 #include "core/GameState.hpp"
-#include "core/Types.hpp"
 #include "controller/GameController.hpp"
 
-#include <imgui.h> // <-- necessário para ImDrawList / ImU32 / ImVec2
+#include <imgui.h>     // ImDrawList / ImU32 / ImVec2
 #include <optional>
+#include <memory>
+#include <mutex>
+#include <cstdint>     // std::uint64_t
+
+namespace tetris::net {
+class NetworkHost;
+class NetworkClient;
+} // namespace tetris::net
 
 namespace tetris::gui_sdl {
 
 class MultiplayerGameScreen final : public Screen {
 public:
-    explicit MultiplayerGameScreen(const tetris::net::MultiplayerConfig& cfg);
+    explicit MultiplayerGameScreen(const tetris::net::MultiplayerConfig& cfg,
+                                   std::shared_ptr<tetris::net::NetworkHost> host = nullptr,
+                                   std::shared_ptr<tetris::net::NetworkClient> client = nullptr);
 
     void handleEvent(Application& app, const SDL_Event& e) override;
     void update(Application& app, float dtSeconds) override;
     void render(Application& app) override;
 
 private:
-    tetris::net::MultiplayerConfig cfg_;
+    // ---- Config ----
+    tetris::net::MultiplayerConfig cfg_{};
 
-    // TimeAttack: 2 estados independentes
+    // ---- Network (optional) ----
+    std::shared_ptr<tetris::net::NetworkHost> host_;
+    std::shared_ptr<tetris::net::NetworkClient> client_;
+
+    bool isHost_ = true;                 // host/offline if client_ == nullptr
+    std::uint64_t clientTick_ = 0;       // client-side tick for InputActionMessage
+    tetris::net::Tick serverTick_ = 0;   // host-side tick for StateUpdate
+
+    float snapshotAccSec_ = 0.0f;
+    const float snapshotPeriodSec_ = 0.05f; // 20 Hz
+
+    // Client received snapshot (authoritative render)
+    mutable std::mutex stateMutex_;
+    std::optional<tetris::net::StateUpdate> lastState_;
+
+    // -------- Core games (host/offline only) --------
     tetris::core::GameState localGame_;
     tetris::controller::GameController localCtrl_;
 
     tetris::core::GameState oppGame_;
     tetris::controller::GameController oppCtrl_;
 
-    // SharedTurns: 1 estado compartilhado
     tetris::core::GameState sharedGame_;
     tetris::controller::GameController sharedCtrl_;
 
+    // (offline AI only)
     float oppInputAcc_ = 0.0f;
 
-    void dispatchLocalAction(tetris::core::GameState& gs,
-                             tetris::controller::GameController& gc,
-                             SDL_Keycode key);
+    // ---------- INPUT ----------
+    static std::optional<tetris::controller::InputAction> actionFromKey(SDL_Keycode key);
 
-    void stepOpponentAI(float dtSeconds);
+    void sendOrApplyAction(tetris::core::GameState& gs,
+                           tetris::controller::GameController& gc,
+                           tetris::controller::InputAction action);
 
-    // Rendering helpers (ASSINATURAS DEVEM BATER COM O .CPP)
-    void drawBoardFromGame(ImDrawList* dl,
-                           const tetris::core::GameState& gs,
-                           ImVec2 topLeft,
-                           float cell,
-                           bool drawBorder,
-                           bool drawActive) const;
+    void applyRemoteInputsHost();      // host consumes InputActionMessage queue
+    void stepOpponentAI(float dtSeconds); // offline only
 
+    // ---------- SNAPSHOT (host -> StateUpdate) ----------
+    static int colorIndexForTetromino(tetris::core::TetrominoType t);
+    static tetris::net::BoardDTO makeBoardDTOFromGame(const tetris::core::GameState& gs,
+                                                      bool includeActive);
+
+    void broadcastSnapshotHost();
+
+    // ---------- RENDER ----------
     void renderTopBar(Application& app, int w, int h) const;
     void renderTimeAttackLayout(Application& app, int w, int h);
     void renderSharedTurnsLayout(Application& app, int w, int h);
 
-    static ImU32 colorForType(tetris::core::TetrominoType t);
+    static ImU32 colorFromIndex(int idx);
+
+    void drawBoardDTO(ImDrawList* dl,
+                      const tetris::net::BoardDTO& board,
+                      ImVec2 topLeft,
+                      float cell,
+                      bool border) const;
+
+    void drawBoardFromGame(ImDrawList* dl,
+                           const tetris::core::GameState& gs,
+                           ImVec2 topLeft,
+                           float cell,
+                           bool border,
+                           bool drawActive) const;
 
     // --- Hold-to-repeat (same feel as SinglePlayer) ---
     float softDropHoldAccSec_ = 0.0f;
@@ -62,7 +105,6 @@ private:
     float leftRepeatAccSec_ = 0.0f;
     float rightRepeatAccSec_ = 0.0f;
 
-    // tuning (match SinglePlayerScreen values)
     float softDropRepeatSec_ = 0.05f; // 20 Hz
     float sideDasSec_ = 0.16f;        // delay before sideways repeat
     float sideArrSec_ = 0.05f;        // sideways repeat rate

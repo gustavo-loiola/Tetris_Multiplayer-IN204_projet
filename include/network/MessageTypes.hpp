@@ -81,6 +81,9 @@ struct StateUpdate {
     Tick serverTick{};
     std::vector<PlayerStateDTO> players;
     // Later you can add flags like "isDelta" vs full snapshot.
+
+    // TimeAttack HUD (0 if not used)
+    std::uint32_t timeLeftSeconds{0};
 };
 
 enum class MatchOutcome {

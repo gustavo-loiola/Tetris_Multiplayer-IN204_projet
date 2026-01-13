@@ -44,6 +44,19 @@ private:
     float snapshotAccSec_ = 0.0f;
     const float snapshotPeriodSec_ = 0.05f; // 20 Hz
 
+    // ---- Match end / result (TimeAttack first) ----
+    bool matchEnded_ = false;
+    float matchElapsedSec_ = 0.0f;
+    bool hostWantsRematch_ = false;
+    bool clientWantsRematch_ = false;
+    bool waitingRematchStart_ = false;
+
+    std::optional<tetris::net::MatchResult> localMatchResult_;   // for host view
+    std::optional<tetris::net::MatchResult> clientMatchResult_;  // what host sent to client (for debug)
+
+    void tryFinalizeMatchHost(); // host-side: decides winner + sends MatchResult
+    void renderMatchOverlay(Application& app, int w, int h); // draws popup overlay on both host/client
+
     // Client received snapshot (authoritative render)
     mutable std::mutex stateMutex_;
     std::optional<tetris::net::StateUpdate> lastState_;

@@ -111,6 +111,8 @@ std::string serialize(const Message& msg)
                 os << (cell.occupied ? 1 : 0) << ':' << cell.colorIndex;
             }
         }
+        // append timeLeftSeconds at the end (keeps backward compatibility)
+        os << ';' << m.timeLeftSeconds;
         break;
     }
     case MessageKind::MatchResult: {
@@ -291,6 +293,18 @@ std::optional<Message> deserialize(const std::string& line)
             }
 
             update.players.push_back(std::move(dto));
+        }
+
+        // optional trailing timeLeftSeconds (if not present, keep 0)
+        std::string timeLeftStr;
+        if (std::getline(is, timeLeftStr)) {
+            if (!timeLeftStr.empty()) {
+                update.timeLeftSeconds = static_cast<std::uint32_t>(std::stoul(timeLeftStr));
+            } else {
+                update.timeLeftSeconds = 0;
+            }
+        } else {
+            update.timeLeftSeconds = 0; // backward compatible with older messages
         }
 
         msg.kind = MessageKind::StateUpdate;

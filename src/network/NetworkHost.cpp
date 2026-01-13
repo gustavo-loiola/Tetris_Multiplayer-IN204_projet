@@ -1,6 +1,5 @@
 #include "network/NetworkHost.hpp"
 
-
 #include <cassert>
 
 namespace tetris::net {
@@ -8,25 +7,14 @@ namespace tetris::net {
 NetworkHost::NetworkHost(const MultiplayerConfig& config)
     : m_config(config)
 {
-    // if (config.mode == GameMode::TimeAttack) {
-    //     // Convert seconds -> ticks: host defines tick duration later.
-    //     // For now: 1 sec = 1000 ticks → can adjust when timer integrated.
-    //     m_rules = std::make_unique<tetris::core::TimeAttackRules>(
-    //         config.timeLimitSeconds * 1000
-    //     );
-    // }
-    // No rules here anymore; HostGameSession owns IMatchRules.
 }
 
 void NetworkHost::addClient(INetworkSessionPtr session)
 {
     const PlayerId assigned = m_nextPlayerId++;
 
-    // A new player must send JoinRequest first,
-    // but we associate a pid immediately to track messages safely.
-    m_players.emplace(assigned, PlayerInfo{assigned, session, ""});
+    m_players.emplace(assigned, PlayerInfo{assigned, session, "", false});
 
-    // Register message handler
     session->setMessageHandler(
         [this, assigned](const Message& msg) {
             handleIncoming(assigned, msg);
@@ -36,9 +24,26 @@ void NetworkHost::addClient(INetworkSessionPtr session)
 
 void NetworkHost::poll()
 {
+    // poll connected sessions
     for (auto& [_, info] : m_players) {
-        if (info.session->isConnected()) {
+        if (info.session && info.session->isConnected()) {
             info.session->poll();
+        }
+    }
+
+    // cleanup disconnected clients
+    cleanupDisconnected();
+}
+
+void NetworkHost::cleanupDisconnected()
+{
+    for (auto it = m_players.begin(); it != m_players.end(); ) {
+        auto& info = it->second;
+        if (!info.session || !info.session->isConnected()) {
+            m_anyClientDisconnected = true;
+            it = m_players.erase(it);
+        } else {
+            ++it;
         }
     }
 }
@@ -47,7 +52,7 @@ void NetworkHost::handleIncoming(PlayerId pid, const Message& msg)
 {
     if (msg.kind == MessageKind::JoinRequest) {
         const auto& req = std::get<JoinRequest>(msg.payload);
-        handleJoinRequest(m_players[pid].session, req);
+        handleJoinRequest(pid, m_players[pid].session, req);
         m_players[pid].name = req.playerName;
     }
     else if (msg.kind == MessageKind::InputActionMessage) {
@@ -55,26 +60,29 @@ void NetworkHost::handleIncoming(PlayerId pid, const Message& msg)
     }
 }
 
-void NetworkHost::handleJoinRequest(INetworkSessionPtr session,
+void NetworkHost::handleJoinRequest(PlayerId pid,
+                                    INetworkSessionPtr session,
                                     const JoinRequest& req)
 {
-    PlayerId assigned = 0;
-    for (const auto& p : m_players) {
-        if (p.second.session == session) {
-            assigned = p.first;
-            break;
+    // If match already started, interpret JoinRequest as:
+    // - initial join OR
+    // - "ready for rematch" (post-game)
+    auto it = m_players.find(pid);
+    if (it != m_players.end()) {
+        if (m_matchStarted) {
+            it->second.readyForRematch = true;
         }
     }
-    assert(assigned != 0);
 
+    // Always reply JoinAccept (harmless even for rematch)
     Message reply;
     reply.kind = MessageKind::JoinAccept;
     reply.payload = JoinAccept{
-        assigned,
+        pid,
         "Welcome " + req.playerName
     };
 
-    session->send(reply);
+    if (session) session->send(reply);
 }
 
 std::vector<InputActionMessage> NetworkHost::consumeInputQueue()
@@ -86,12 +94,9 @@ std::vector<InputActionMessage> NetworkHost::consumeInputQueue()
 
 void NetworkHost::startMatch()
 {
-    if (m_matchStarted) return;
+    // allow calling again for rematch: we simply resend StartGame
     m_matchStarted = true;
-
-    m_startTick = 0; // TODO integrate with real game clock
-    //m_rules->onMatchStart(m_startTick);
-
+    m_startTick = 0;
     sendStartGameMessage();
 }
 
@@ -100,7 +105,6 @@ void NetworkHost::sendStartGameMessage()
     Message msg;
     msg.kind = MessageKind::StartGame;
     msg.payload = StartGame{
-        //m_rules->mode(),
         m_config.mode,
         m_config.timeLimitSeconds,
         m_config.piecesPerTurn,
@@ -108,14 +112,15 @@ void NetworkHost::sendStartGameMessage()
     };
 
     for (auto& [_, info] : m_players) {
-        info.session->send(msg);
+        if (info.session && info.session->isConnected()) {
+            info.session->send(msg);
+        }
     }
 }
 
 void NetworkHost::broadcast(const Message& msg)
 {
-    for (auto& [pid, info] : m_players) {
-        (void)pid;
+    for (auto& [_, info] : m_players) {
         if (info.session && info.session->isConnected()) {
             info.session->send(msg);
         }
@@ -125,13 +130,34 @@ void NetworkHost::broadcast(const Message& msg)
 void NetworkHost::sendTo(PlayerId playerId, const Message& msg)
 {
     auto it = m_players.find(playerId);
-    if (it == m_players.end()) {
-        return;
-    }
+    if (it == m_players.end()) return;
 
     auto& info = it->second;
     if (info.session && info.session->isConnected()) {
         info.session->send(msg);
+    }
+}
+
+bool NetworkHost::hasAnyConnectedClient() const
+{
+    for (const auto& [_, info] : m_players) {
+        if (info.session && info.session->isConnected()) return true;
+    }
+    return false;
+}
+
+bool NetworkHost::anyClientReadyForRematch() const
+{
+    for (const auto& [_, info] : m_players) {
+        if (info.session && info.session->isConnected() && info.readyForRematch) return true;
+    }
+    return false;
+}
+
+void NetworkHost::clearRematchFlags()
+{
+    for (auto& [_, info] : m_players) {
+        info.readyForRematch = false;
     }
 }
 

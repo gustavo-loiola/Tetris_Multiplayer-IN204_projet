@@ -44,6 +44,15 @@ MultiplayerGameScreen::MultiplayerGameScreen(const tetris::net::MultiplayerConfi
             lastState_ = s;
         });
         if (!client_->isJoined()) client_->start();
+
+        client_->setMatchResultHandler([this](const tetris::net::MatchResult& r) {
+            // Client receives its own result from host
+            matchEnded_ = true;
+            localMatchResult_ = r;
+
+            // Stop any "waiting rematch start" if match ended normally
+            waitingRematchStart_ = false;
+        });
     }
 
     // If host exists, start match immediately for testing
@@ -114,6 +123,9 @@ void MultiplayerGameScreen::handleEvent(Application& app, const SDL_Event& e)
         app.setScreen(std::make_unique<StartScreen>());
         return;
     }
+
+    // If match ended, ignore gameplay inputs (still allow Backspace above)
+    if (matchEnded_) return;
 
     // choose which local state/controller is "ours"
     tetris::core::GameState* gs = nullptr;
@@ -253,6 +265,14 @@ void MultiplayerGameScreen::broadcastSnapshotHost()
     tetris::net::StateUpdate su;
     su.serverTick = serverTick_;
 
+    // TimeAttack: send remaining time
+    if (cfg_.mode == tetris::net::GameMode::TimeAttack && cfg_.timeLimitSeconds > 0) {
+        const float left = std::max(0.0f, static_cast<float>(cfg_.timeLimitSeconds) - matchElapsedSec_);
+        su.timeLeftSeconds = static_cast<std::uint32_t>(left + 0.999f); // ceil-ish
+    } else {
+        su.timeLeftSeconds = 0;
+    }
+
     if (cfg_.mode == tetris::net::GameMode::TimeAttack) {
         // Player 1 = host(local), Player 2 = remote(opponent)
         tetris::net::PlayerStateDTO p1;
@@ -304,44 +324,93 @@ void MultiplayerGameScreen::broadcastSnapshotHost()
 
 void MultiplayerGameScreen::update(Application&, float dtSeconds)
 {
-    // CLIENT: does NOT run physics. Only sends inputs (hold) and renders snapshots received.
-    if (!isHost_) {
+    // ---------------- CLIENT ----------------
+    // Client does NOT run local physics.
+    // It only:
+    //  - sends hold-repeat inputs
+    //  - reads snapshots from host
+    if (!cfg_.isHost) {
         applyHoldInputs(dtSeconds);
+
+        if (client_) {
+            // Grab latest snapshot (thread-safe inside NetworkClient)
+            auto up = client_->lastStateUpdate();
+            if (up) {
+                std::lock_guard<std::mutex> lock(stateMutex_);
+                lastState_ = std::move(*up);
+            }
+        }
         return;
     }
 
-    // HOST/OFFLINE: run physics + apply network inputs
+    // ---------------- HOST ----------------
+    // IMPORTANT (3.2): keep polling ALWAYS so we can:
+    //  - detect disconnects (client left)
+    //  - receive JoinRequest used as "rematch ready"
+    if (host_) {
+        host_->poll();
+    }
+
+    matchElapsedSec_ += dtSeconds;
+
+    // If match ended, keep broadcasting snapshots so client stays visually consistent,
+    // but do not run physics anymore.
+    if (matchEnded_) {
+        snapshotAccSec_ += dtSeconds;
+        while (snapshotAccSec_ >= snapshotPeriodSec_) {
+            snapshotAccSec_ -= snapshotPeriodSec_;
+            ++serverTick_;
+            broadcastSnapshotHost();
+        }
+        return;
+    }
+
+    // convert dt to ms for core controllers
     const int ms = static_cast<int>(dtSeconds * 1000.0f + 0.5f);
     auto dur = tetris::controller::GameController::Duration{ms};
 
-    // 1) host consumes remote inputs (if network host exists)
-    applyRemoteInputsHost();
-
-    // 2) run physics
     if (cfg_.mode == tetris::net::GameMode::TimeAttack) {
+        // Host updates both games
         localCtrl_.update(dur);
         oppCtrl_.update(dur);
 
-        // offline only (no host/client):
-        stepOpponentAI(dtSeconds);
+        // Consume client inputs -> apply to opponent game
+        if (host_) {
+            auto inputs = host_->consumeInputQueue();
+            for (const auto& m : inputs) {
+                (void)m.playerId; // for now: 1 client -> opponent
+                oppCtrl_.handleAction(m.action);
+            }
+        }
+
+        // IMPORTANT: if you're using network, DON'T run offline AI
+        // stepOpponentAI(dtSeconds);
+
     } else {
+        // SharedTurns: one shared board
         sharedCtrl_.update(dur);
+
+        if (host_) {
+            auto inputs = host_->consumeInputQueue();
+            for (const auto& m : inputs) {
+                (void)m.playerId;
+                sharedCtrl_.handleAction(m.action);
+            }
+        }
     }
 
-    // 3) local hold-to-repeat (host/offline)
+    // Host also gets hold-to-repeat locally
     applyHoldInputs(dtSeconds);
 
-    // 4) broadcast snapshot (host only)
-    if (host_ && cfg_.isHost) {
-        // simple tick
-        serverTick_++;
+    // Check end-of-match conditions (time limit / game over)
+    tryFinalizeMatchHost();
 
-        // send at ~20 Hz (every 50 ms)
-        snapshotAccSec_ += dtSeconds;
-        if (snapshotAccSec_ >= 0.05f) {
-            snapshotAccSec_ = 0.0f;
-            broadcastSnapshotHost();
-        }
+    // --- Broadcast authoritative snapshot to clients (20 Hz) ---
+    snapshotAccSec_ += dtSeconds;
+    while (snapshotAccSec_ >= snapshotPeriodSec_) {
+        snapshotAccSec_ -= snapshotPeriodSec_;
+        ++serverTick_;
+        broadcastSnapshotHost();
     }
 }
 
@@ -470,6 +539,8 @@ void MultiplayerGameScreen::render(Application& app)
         renderTimeAttackLayout(app, w, h);
     else
         renderSharedTurnsLayout(app, w, h);
+    
+    renderMatchOverlay(app, w, h);
 }
 
 void MultiplayerGameScreen::renderTopBar(Application& app, int w, int h) const
@@ -482,9 +553,49 @@ void MultiplayerGameScreen::renderTopBar(Application& app, int w, int h) const
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
     ImGui::Begin("##mp_topbar", nullptr, flags);
 
+    std::optional<tetris::net::StateUpdate> snap;
+    if (client_) {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        snap = lastState_;
+    }
+
+    std::uint32_t timeLeft = 0;
+    if (cfg_.mode == tetris::net::GameMode::TimeAttack && cfg_.timeLimitSeconds > 0) {
+        if (client_ && snap) {
+            timeLeft = snap->timeLeftSeconds;
+        } else {
+            // host/offline: compute locally
+            const float left = std::max(0.0f, static_cast<float>(cfg_.timeLimitSeconds) - matchElapsedSec_);
+            timeLeft = static_cast<std::uint32_t>(left + 0.999f);
+        }
+    }
+
     ImGui::Text("Role: %s  |  Network: %s",
                 cfg_.isHost ? "Host" : "Client",
                 (host_ || client_) ? "ON" : "OFF");
+
+    // ---- TimeAttack timer (authoritative on host, replicated to client) ----
+    if (cfg_.mode == tetris::net::GameMode::TimeAttack && cfg_.timeLimitSeconds > 0) {
+        std::uint32_t leftSec = 0;
+
+        if (client_) {
+            std::lock_guard<std::mutex> lock(stateMutex_);
+            if (lastState_) leftSec = lastState_->timeLeftSeconds;
+        } else {
+            const float left = std::max(
+                0.0f,
+                static_cast<float>(cfg_.timeLimitSeconds) - matchElapsedSec_
+            );
+            leftSec = static_cast<std::uint32_t>(left + 0.999f);
+        }
+
+        const std::uint32_t mm = leftSec / 60;
+        const std::uint32_t ss = leftSec % 60;
+
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 260);
+        ImGui::Text("Time left: %02u:%02u", mm, ss);
+    }
 
     ImGui::SameLine();
     ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 120);
@@ -550,23 +661,32 @@ void MultiplayerGameScreen::renderTimeAttackLayout(Application& app, int w, int 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse;
     ImGui::Begin("Scoreboard", nullptr, flags);
 
+    ImGui::SeparatorText("YOU");
     if (client_ && snap && snap->players.size() >= 2) {
-        ImGui::Text("You score: %d", snap->players[1].score);
-        ImGui::Text("Opp score: %d", snap->players[0].score);
-        ImGui::Separator();
-        ImGui::Text("You level: %d", snap->players[1].level);
-        ImGui::Text("Opp level: %d", snap->players[0].level);
-        ImGui::Separator();
-        ImGui::TextDisabled("Client rendering authoritative StateUpdate.");
+        ImGui::Text("Score: %d", snap->players[1].score);
+        ImGui::Text("Level: %d", snap->players[1].level);
+        ImGui::Text("Alive: %s", snap->players[1].isAlive ? "Yes" : "No");
     } else {
-        ImGui::Text("You: %llu", (unsigned long long)localGame_.score());
-        ImGui::Text("Opp: %llu", (unsigned long long)oppGame_.score());
-        ImGui::Separator();
-        ImGui::Text("Your level: %d", localGame_.level());
-        ImGui::Text("Opp  level: %d", oppGame_.level());
-        ImGui::Separator();
-        ImGui::TextDisabled("Host/offline: core-driven.");
+        ImGui::Text("Score: %llu", (unsigned long long)localGame_.score());
+        ImGui::Text("Level: %d", localGame_.level());
+        ImGui::Text("Alive: %s", localGame_.status() != tetris::core::GameStatus::GameOver ? "Yes" : "No");
     }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("OPPONENT");
+    if (client_ && snap && snap->players.size() >= 2) {
+        ImGui::Text("Score: %d", snap->players[0].score);
+        ImGui::Text("Level: %d", snap->players[0].level);
+        ImGui::Text("Alive: %s", snap->players[0].isAlive ? "Yes" : "No");
+    } else {
+        ImGui::Text("Score: %llu", (unsigned long long)oppGame_.score());
+        ImGui::Text("Level: %d", oppGame_.level());
+        ImGui::Text("Alive: %s", oppGame_.status() != tetris::core::GameStatus::GameOver ? "Yes" : "No");
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::TextDisabled(client_ ? "Client: authoritative StateUpdate." : "Host/offline: core-driven.");
 
     ImGui::End();
 }
@@ -722,6 +842,223 @@ void MultiplayerGameScreen::applyHoldInputs(float dtSeconds)
         }
         leftHoldSec_ = 0.0f; leftRepeatAccSec_ = 0.0f;
     }
+}
+
+void MultiplayerGameScreen::tryFinalizeMatchHost()
+{
+    if (!cfg_.isHost || !host_) return;
+    if (matchEnded_) return;
+
+    // Only implement match logic for TimeAttack for now
+    if (cfg_.mode != tetris::net::GameMode::TimeAttack) return;
+
+    // Track time
+    // (dt is accumulated in update via matchElapsedSec_ increment; if you didn't do it yet,
+    // you can increment in update; easiest is here using snapshotPeriod accumulator isn't correct.)
+    // We'll assume you increment matchElapsedSec_ in update by dtSeconds. If not, do it now:
+    // NOTE: If you prefer, move this increment to update() once per frame.
+    // We'll do it here safely by using ImGui delta is not available; so keep it in update:
+    // matchElapsedSec_ += dtSeconds;  <-- Do this in update before calling tryFinalizeMatchHost()
+
+    const bool hostDead = (localGame_.status() == tetris::core::GameStatus::GameOver);
+    const bool oppDead  = (oppGame_.status()   == tetris::core::GameStatus::GameOver);
+
+    const bool timeLimitEnabled = (cfg_.timeLimitSeconds > 0);
+    const bool timeUp = timeLimitEnabled && (matchElapsedSec_ >= static_cast<float>(cfg_.timeLimitSeconds));
+
+    // End conditions:
+    // - time is up
+    // - someone died
+    // - both died
+    if (!timeUp && !hostDead && !oppDead) {
+        return;
+    }
+
+    matchEnded_ = true;
+    ++serverTick_;
+
+    const int hostScore = static_cast<int>(localGame_.score());
+    const int oppScore  = static_cast<int>(oppGame_.score());
+
+    // Decide winner:
+    // Priority: if exactly one died -> the other wins.
+    // Else (timeUp or both died) -> higher score wins, tie -> draw.
+    tetris::net::MatchOutcome hostOutcome = tetris::net::MatchOutcome::Draw;
+    tetris::net::MatchOutcome oppOutcome  = tetris::net::MatchOutcome::Draw;
+
+    if (hostDead && !oppDead) {
+        hostOutcome = tetris::net::MatchOutcome::Lose;
+        oppOutcome  = tetris::net::MatchOutcome::Win;
+    } else if (!hostDead && oppDead) {
+        hostOutcome = tetris::net::MatchOutcome::Win;
+        oppOutcome  = tetris::net::MatchOutcome::Lose;
+    } else {
+        // timeUp or both dead
+        if (hostScore > oppScore) {
+            hostOutcome = tetris::net::MatchOutcome::Win;
+            oppOutcome  = tetris::net::MatchOutcome::Lose;
+        } else if (hostScore < oppScore) {
+            hostOutcome = tetris::net::MatchOutcome::Lose;
+            oppOutcome  = tetris::net::MatchOutcome::Win;
+        } else {
+            hostOutcome = tetris::net::MatchOutcome::Draw;
+            oppOutcome  = tetris::net::MatchOutcome::Draw;
+        }
+    }
+
+    // Store local host result (for overlay)
+    tetris::net::MatchResult hostRes;
+    hostRes.endTick = serverTick_;
+    hostRes.playerId = 1; // matches your "Host" id in snapshots
+    hostRes.outcome = hostOutcome;
+    hostRes.finalScore = hostScore;
+    localMatchResult_ = hostRes;
+
+    // Send client its result
+    tetris::net::MatchResult clientRes;
+    clientRes.endTick = serverTick_;
+    clientRes.playerId = 2; // matches your "Client" id in snapshots
+    clientRes.outcome = oppOutcome;      // client sees from their perspective
+    clientRes.finalScore = oppScore;
+    clientMatchResult_ = clientRes;
+
+    tetris::net::Message msg;
+    msg.kind = tetris::net::MessageKind::MatchResult;
+    msg.payload = clientRes;
+    host_->broadcast(msg);
+}
+
+void MultiplayerGameScreen::renderMatchOverlay(Application& app, int w, int h)
+{
+    if (!matchEnded_) return;
+    if (!localMatchResult_) return;
+
+    auto outcomeToText = [](tetris::net::MatchOutcome o) -> const char* {
+        switch (o) {
+            case tetris::net::MatchOutcome::Win:  return "YOU WIN!";
+            case tetris::net::MatchOutcome::Lose: return "YOU LOSE";
+            case tetris::net::MatchOutcome::Draw: return "DRAW";
+        }
+        return "MATCH OVER";
+    };
+
+    const char* title = outcomeToText(localMatchResult_->outcome);
+
+    // no full-screen dim
+    const ImVec2 size(500, 320);
+    ImGui::SetNextWindowPos(ImVec2(w * 0.5f, h * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoMove;
+
+    ImGui::Begin("Match Result", nullptr, flags);
+
+    ImGui::Spacing();
+    ImGui::SetWindowFontScale(1.35f);
+    ImGui::TextUnformatted(title);
+    ImGui::SetWindowFontScale(1.0f);
+
+    ImGui::Separator();
+    ImGui::Text("Final score: %d", localMatchResult_->finalScore);
+
+    if (cfg_.mode == tetris::net::GameMode::TimeAttack && cfg_.timeLimitSeconds > 0) {
+        ImGui::Text("Time limit: %u s", cfg_.timeLimitSeconds);
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    // -------- Rematch logic --------
+    bool opponentPresent = true;
+    bool opponentReady = false;
+
+    if (cfg_.isHost) {
+        opponentPresent = host_ && host_->hasAnyConnectedClient();
+        opponentReady   = host_ && host_->anyClientReadyForRematch();
+
+        if (!opponentPresent) {
+            ImGui::TextColored(ImVec4(1,0.35f,0.35f,1), "Opponent left. Rematch unavailable.");
+        } else {
+            ImGui::Text("Opponent rematch: %s", opponentReady ? "READY" : "NOT READY");
+        }
+
+        ImGui::Spacing();
+
+        ImGui::BeginDisabled(!opponentPresent);
+        if (ImGui::Button(hostWantsRematch_ ? "Rematch: READY (click to cancel)" : "Rematch (I am ready)", ImVec2(-1, 42))) {
+            hostWantsRematch_ = !hostWantsRematch_;
+        }
+        ImGui::EndDisabled();
+
+        // If both agreed, restart match
+        if (opponentPresent && hostWantsRematch_ && opponentReady && host_) {
+            // reset host core state
+            localGame_.reset(); localGame_.start(); localCtrl_.resetTiming();
+            oppGame_.reset();   oppGame_.start();   oppCtrl_.resetTiming();
+            sharedGame_.reset(); sharedGame_.start(); sharedCtrl_.resetTiming();
+
+            matchEnded_ = false;
+            matchElapsedSec_ = 0.0f;
+            localMatchResult_.reset();
+            clientMatchResult_.reset();
+            hostWantsRematch_ = false;
+
+            // clear rematch flags on host so next rematch requires fresh agreement
+            host_->clearRematchFlags();
+
+            // resend StartGame to clients
+            host_->startMatch();
+        }
+    } else {
+        // CLIENT
+        // If client clicked rematch, it sends JoinRequest again (NetworkClient::start()).
+        // Host interprets it as readyForRematch.
+        if (client_) {
+            // If host already restarted, client will receive StartGame.
+            auto sg = client_->lastStartGame();
+            if (sg && waitingRematchStart_) {
+                // new match started
+                matchEnded_ = false;
+                matchElapsedSec_ = 0.0f;
+                localMatchResult_.reset();
+                waitingRematchStart_ = false;
+                clientWantsRematch_ = false;
+
+                // optional: clear last snapshots so UI doesn't show stale
+                {
+                    std::lock_guard<std::mutex> lock(stateMutex_);
+                    lastState_.reset();
+                }
+            }
+        }
+
+        if (waitingRematchStart_) {
+            ImGui::TextDisabled("Waiting host to restart...");
+        }
+
+        if (ImGui::Button(clientWantsRematch_ ? "Rematch requested" : "Rematch (request)", ImVec2(-1, 42))) {
+            if (client_ && !clientWantsRematch_) {
+                clientWantsRematch_ = true;
+                waitingRematchStart_ = true;
+                client_->start(); // resend JoinRequest => host marks readyForRematch
+            }
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    // Exit: if client exits, TcpSession will close => host sees disconnect
+    if (ImGui::Button("Back to Menu", ImVec2(-1, 42))) {
+        app.setScreen(std::make_unique<StartScreen>());
+        ImGui::End();
+        return;
+    }
+
+    ImGui::End();
 }
 
 } // namespace tetris::gui_sdl

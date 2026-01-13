@@ -3,6 +3,7 @@
 #include <wx/frame.h>
 #include <wx/timer.h>
 #include <wx/stattext.h>
+#include <wx/sizer.h>
 
 #include "core/GameState.hpp"
 #include "controller/GameController.hpp"
@@ -33,6 +34,9 @@ private:
     wxStaticText* levelText_{nullptr};
     wxStaticText* statusText_{nullptr};
 
+    // New StaticText for the command box
+    wxStaticText* commandBox_{nullptr};
+
     // HUD animation state
     int hudFlashAccumulatorMs_;
     bool hudFlashOn_{true};
@@ -40,6 +44,7 @@ private:
     void setupLayout();
     void setupTimer();
     void updateStatusBar(); 
+    void updateCommandBox();  // New method to update the command box
 
     void OnTimer(wxTimerEvent& event);
     void OnKeyDown(wxKeyEvent& event);

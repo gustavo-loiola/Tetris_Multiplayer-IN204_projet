@@ -39,18 +39,22 @@ public:
     /// Send a message to a specific player, if connected.
     void sendTo(PlayerId playerId, const Message& msg);
 
-private:
+    // Public the PlayerInfo struct for external use
     struct PlayerInfo {
         PlayerId id;
         INetworkSessionPtr session;
         std::string name;
     };
 
+    std::unordered_map<PlayerId, PlayerInfo> getPlayers() const {
+        return m_players; // Return the map of players
+    }
+
+private:
     MultiplayerConfig m_config;
     std::unordered_map<PlayerId, PlayerInfo> m_players;
     std::vector<InputActionMessage> m_inputQueue;
 
-    //std::unique_ptr<tetris::core::IMatchRules> m_rules;
     bool m_matchStarted{false};
     Tick m_startTick{0};
 

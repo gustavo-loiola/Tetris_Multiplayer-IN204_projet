@@ -25,6 +25,7 @@ TetrisFrame::TetrisFrame(wxWindow* parent,
     , scoreText_{nullptr}
     , levelText_{nullptr}
     , statusText_{nullptr}
+    , commandBox_{nullptr}  // Initialize command box pointer
     , hudFlashAccumulatorMs_{0} 
     , hudFlashOn_{true}           
 {
@@ -35,6 +36,7 @@ TetrisFrame::TetrisFrame(wxWindow* parent,
 
     game_.start();
     updateStatusBar();
+    updateCommandBox();  // Update command box when the game starts
 
     Centre();
 
@@ -68,7 +70,7 @@ void TetrisFrame::setupLayout()
 
     topSizer->Add(scoreText_, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, 15);
     topSizer->Add(levelText_, 0, wxRIGHT | wxALIGN_CENTER_VERTICAL, 15);
-    topSizer->AddStretchSpacer(1); // empurra status pro lado direito
+    topSizer->AddStretchSpacer(1); // Push status to the right
     topSizer->Add(statusText_, 0, wxALIGN_CENTER_VERTICAL);
 
     topPanel->SetSizer(topSizer);
@@ -84,6 +86,21 @@ void TetrisFrame::setupLayout()
     middleSizer->Add(nextPanel_, 1, wxEXPAND);
 
     mainSizer->Add(middleSizer, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 5);
+
+    // --- Bottom area: command box ---
+    commandBox_ = new wxStaticText(this, wxID_ANY, 
+        "Controls:\n"
+        "Move Left: A or Left Arrow\n"
+        "Move Right: D or Right Arrow\n"
+        "Move Down: S or Down Arrow\n"
+        "Rotate: W or Up Arrow\n"
+        "Hard Drop: Space\n"
+        "Pause: P\n"
+        "Reset: R", wxDefaultPosition, wxDefaultSize, wxALIGN_LEFT);
+    commandBox_->SetBackgroundColour(wxColour(30, 30, 30));
+    commandBox_->SetForegroundColour(*wxWHITE);
+
+    mainSizer->Add(commandBox_, 0, wxEXPAND | wxALL, 5);
 
     SetSizer(mainSizer);
     Layout();
@@ -178,7 +195,7 @@ void TetrisFrame::updateStatusBar()
     using tetris::core::GameStatus;
     using tetris::ui::gui::Theme;
 
-    // Score / Level sempre brancos do tema
+    // Score / Level always white
     {
         long long scoreValue = static_cast<long long>(game_.score());
         wxString scoreStr = "Score: " + wxString::Format("%lld", scoreValue);
@@ -193,7 +210,7 @@ void TetrisFrame::updateStatusBar()
         levelText_->SetForegroundColour(Theme::statusText());
     }
 
-    // Status: texto + cor (com animação)
+    // Status: text + color (with animation)
     wxString statusStr;
     wxColour statusColor = Theme::statusText();
 
@@ -212,16 +229,12 @@ void TetrisFrame::updateStatusBar()
 
     case GameStatus::Paused:
         statusStr = "Paused";
-        // piscar entre amarelo forte e cor neutra
-        statusColor = hudFlashOn_ ? Theme::statusPaused()
-                                  : Theme::statusText();
+        statusColor = hudFlashOn_ ? Theme::statusPaused() : Theme::statusText();
         break;
 
     case GameStatus::GameOver:
         statusStr = "GameOver";
-        // piscar entre vermelho forte e cor neutra
-        statusColor = hudFlashOn_ ? Theme::statusGameOver()
-                                  : Theme::statusText();
+        statusColor = hudFlashOn_ ? Theme::statusGameOver() : Theme::statusText();
         break;
     }
 
@@ -234,6 +247,24 @@ void TetrisFrame::updateStatusBar()
     }
     if (GetSizer()) {
         GetSizer()->Layout();
+    }
+}
+
+void TetrisFrame::updateCommandBox()
+{
+    // This sets the initial controls' instructions in the command box
+    if (commandBox_)
+    {
+        commandBox_->SetLabel(
+            "Controls:\n"
+            "Move Left: A or Left Arrow\n"
+            "Move Right: D or Right Arrow\n"
+            "Move Down: S or Down Arrow\n"
+            "Rotate: W or Up Arrow\n"
+            "Hard Drop: Space\n"
+            "Pause: P\n"
+            "Reset: R"
+        );
     }
 }
 

@@ -106,11 +106,15 @@ void LobbyScreen::render(Application& app)
     ImGui::Begin("Lobby", nullptr, flags);
 
     ImGui::Text("Role: %s", cfg_.isHost ? "Host" : "Client");
-    ImGui::Text("Mode: %s", (cfg_.mode == tetris::net::GameMode::TimeAttack) ? "Time Attack" : "Shared Turns");
-    if (cfg_.mode == tetris::net::GameMode::TimeAttack) {
-        ImGui::Text("Time limit: %u seconds", cfg_.timeLimitSeconds);
+    if (cfg_.isHost) {
+        ImGui::Text("Mode: %s", (cfg_.mode == tetris::net::GameMode::TimeAttack) ? "Time Attack" : "Shared Turns");
+        if (cfg_.mode == tetris::net::GameMode::TimeAttack) {
+            ImGui::Text("Time limit: %u seconds", cfg_.timeLimitSeconds);
+        } else {
+            ImGui::Text("Pieces/turn: %u", cfg_.piecesPerTurn);
+        }
     } else {
-        ImGui::Text("Pieces/turn: %u", cfg_.piecesPerTurn);
+        ImGui::TextDisabled("Match rules are chosen by the host.");
     }
 
     ImGui::Separator();
@@ -129,6 +133,27 @@ void LobbyScreen::render(Application& app)
 
         bool startGame = (client_ && client_->lastStartGame().has_value());
         ImGui::Text("StartGame: %s", startGame ? "Received" : "Waiting...");
+
+        // --------- Match rules (host authoritative) ---------
+        ImGui::SeparatorText("Match rules (host)");
+
+        if (client_) {
+            auto sg = client_->lastStartGame();
+            if (sg.has_value()) {
+                ImGui::Text("Mode: %s",
+                    (sg->mode == tetris::net::GameMode::TimeAttack) ? "Time Attack" : "Shared Turns");
+
+                if (sg->mode == tetris::net::GameMode::TimeAttack) {
+                    ImGui::Text("Time limit: %u seconds", sg->timeLimitSeconds);
+                } else {
+                    ImGui::Text("Pieces/turn: %u", sg->piecesPerTurn);
+                }
+            } else {
+                ImGui::TextDisabled("Waiting rules from host (will arrive with StartGame)...");
+            }
+        } else {
+            ImGui::TextDisabled("Client not initialized yet.");
+        }
     } else {
         ImGui::Text("Listening on port: %u", cfg_.port);
         ImGui::Text("Server: %s", (server_ && server_->isRunning()) ? "Running" : "Stopped");

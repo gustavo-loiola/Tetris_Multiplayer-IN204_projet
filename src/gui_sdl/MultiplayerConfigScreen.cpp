@@ -64,8 +64,12 @@ void MultiplayerConfigScreen::render(Application& app)
 
     ImGui::Spacing();
 
+    const bool isJoin = (roleIndex_ == 1);
+
     // Mode selection
-    ImGui::TextUnformatted("Game mode:");
+    ImGui::TextUnformatted("Game mode (host decides):");
+
+    ImGui::BeginDisabled(isJoin);
     const char* modes[] = { "Time Attack", "Shared Turns" };
     ImGui::Combo("Mode", &modeIndex_, modes, IM_ARRAYSIZE(modes));
 
@@ -75,6 +79,11 @@ void MultiplayerConfigScreen::render(Application& app)
     } else {
         ImGui::InputInt("Pieces per turn", &piecesPerTurn_);
         if (piecesPerTurn_ < 1) piecesPerTurn_ = 1;
+    }
+    ImGui::EndDisabled();
+
+    if (isJoin) {
+        ImGui::TextDisabled("These settings will be provided by the host when the match starts.");
     }
 
     ImGui::Separator();
@@ -94,14 +103,20 @@ void MultiplayerConfigScreen::render(Application& app)
         cfg_.hostAddress = hostAddressBuf_;
         cfg_.port = static_cast<std::uint16_t>(port_);
 
-        if (modeIndex_ == 0) {
-            cfg_.mode = tetris::net::GameMode::TimeAttack;
-            cfg_.timeLimitSeconds = static_cast<std::uint32_t>(timeLimitSec_);
-            cfg_.piecesPerTurn = 0;
+       if (cfg_.isHost) {
+            // Host decides rules
+            if (modeIndex_ == 0) {
+                cfg_.mode = tetris::net::GameMode::TimeAttack;
+                cfg_.timeLimitSeconds = static_cast<std::uint32_t>(timeLimitSec_);
+                cfg_.piecesPerTurn = 0;
+            } else {
+                cfg_.mode = tetris::net::GameMode::SharedTurns;
+                cfg_.piecesPerTurn = static_cast<std::uint32_t>(piecesPerTurn_);
+                cfg_.timeLimitSeconds = 0;
+            }
         } else {
-            cfg_.mode = tetris::net::GameMode::SharedTurns;
-            cfg_.piecesPerTurn = static_cast<std::uint32_t>(piecesPerTurn_);
-            cfg_.timeLimitSeconds = 0;
+            // Joiner: rules come from host's StartGame (Lobby/Game screen)
+            // Keep cfg_.mode/timeLimitSeconds/piecesPerTurn as-is (or set to safe defaults)
         }
 
         app.setScreen(std::make_unique<LobbyScreen>(cfg_));

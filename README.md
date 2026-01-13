@@ -4,33 +4,34 @@ A multiplayer-enabled implementation of **Tetris** written in **C++17**, develop
 
 This repository contains:
 - a complete **single-player Tetris engine**
-- a **wxWidgets GUI** (main user interface)
-- a **TCP-based multiplayer architecture** with two game modes (Time Attack, Shared Turns)
-
-> Note: Multiplayer “lobby + ready” UX is part of the target design, but the lobby/ready screen and ready-handshake may still be under development depending on the current branch/state.
+- a **SDL2 + Dear ImGui GUI** (main user interface)
+- a **TCP-based multiplayer architecture** with two game modes (**Time Attack**, **Shared Turns**)
+- a **host-authoritative** multiplayer model (clients send inputs, host simulates and broadcasts snapshots)
 
 ---
 
 ## 1) Project Description
 
 ### Single-player Tetris (implemented)
-The project re-implements classic Tetris mechanics:
+Classic Tetris mechanics:
 - Standard 7 Tetrominoes (I, O, T, L, J, S, Z)
-- Lateral movement, rotations, gravity, line clearing
-- Level progression and scoring (Tetris guideline-style)
-- Pause/resume/reset and game over
+- Lateral movement, rotation, gravity, line clearing
+- Level progression and scoring
+- Pause/resume and game over
 
-### Multiplayer extension (implemented / evolving)
+### Multiplayer (implemented)
 The multiplayer layer follows an **authoritative host** model:
-- One player **hosts** a match
-- Other players **join** remotely (different machines)
-- Clients send **InputAction** requests to the host
-- Host applies actions to authoritative state and broadcasts **StateUpdate** snapshots
+- One player **hosts** a match (server)
+- Another player **joins** remotely (client)
+- Client sends **InputAction** messages to host
+- Host applies actions to authoritative `GameState`(s)
+- Host broadcasts **StateUpdate** snapshots (periodic, ~20 Hz) for client rendering
 - Match end results are shared via **MatchResult**
+- Disconnects are detected and displayed (e.g., **HOST DISCONNECTED**, **Opponent disconnected**)
 
-Multiplayer supports multiple modes (Strategy pattern):
-- **Time Attack**: each player plays on their own board for a fixed duration; highest score wins
-- **Shared Turns**: one shared board where players alternate control (by configurable pieces-per-turn)
+**Implemented modes:**
+- **Time Attack**: each player plays on their own board; match ends on time limit or game over; winner by survival/score.
+- **Shared Turns**: one shared board; control alternates **by pieces-per-turn** (only the active player inputs are accepted by host).
 
 ---
 
@@ -39,27 +40,31 @@ Multiplayer supports multiple modes (Strategy pattern):
 The code is organized into evolutive modules:
 
 ### Core (Game Logic) – `tetris_core`
-- Board representation, tetromino behavior, collisions, rotations
+- Board representation, tetromino behavior, collisions, rotation
 - Line clearing, scoring, level progression
-- GameState lifecycle
+- `GameState` lifecycle and legality of moves
 - Match rules strategies (TimeAttack / SharedTurns)
 
-### Controller
-- `GameController` runs time-based gravity and applies input actions
-- `InputAction` is UI/network agnostic
-
-### GUI (wxWidgets) – `tetris_gui`
-- `StartFrame` main menu
-- `TetrisFrame` single-player gameplay view (board + next piece + HUD)
-- Multiplayer configuration dialog and multiplayer views/panels
+### Controller – `controller/`
+- `GameController` runs gravity / timing and applies `InputAction`
+- `InputAction` is UI- and network-agnostic
 
 ### Networking – `tetris_net`
-- TCP sessions/server
-- Message protocol + serialization
-- Host/client orchestration
-- State snapshot mapping for client rendering
+- TCP transport (`TcpServer`, `TcpSession`)
+- Protocol (`MessageTypes`) + text serialization (`Serialization`)
+- Host orchestration (`NetworkHost`) and client interface (`NetworkClient`)
+- Snapshot mapping between core state and DTOs (`StateUpdateMapper`)
 
-This separation keeps the game engine independent from UI and networking, making the system maintainable and extensible.
+### GUI (SDL2 + ImGui) – `tetris_gui_sdl`
+- Screen state machine (`Screen`, `Application`)
+- Screens:
+  - `StartScreen`
+  - `MultiplayerConfigScreen` (host/join + params)
+  - `LobbyScreen` (connection + start match for host)
+  - `MultiplayerGameScreen` (boards + scoreboards + match overlay + rematch/disconnect UX)
+
+**Important design rule:**  
+`tetris_core` does **not** depend on GUI or networking. UI/network depend on core.
 
 ---
 
@@ -68,144 +73,124 @@ This separation keeps the game engine independent from UI and networking, making
 ### Requirements
 - **C++17** or later
 - **CMake ≥ 3.16**
-- **vcpkg** (manifest mode supported via `vcpkg.json`)
 - A compiler toolchain (MSVC / clang / gcc)
 
-### Dependencies (vcpkg)
-This project uses vcpkg manifest dependencies:
-- `wxwidgets`
-
-Ensure you have `VCPKG_ROOT` set (Windows example):
+### Configure & Build (Windows PowerShell)
 ```powershell
-setx VCPKG_ROOT "C:\vcpkg"
+cmake -B build -S .
+cmake --build build --target tetris_gui_sdl
 ````
 
-### Configure & Build
+### Configure & Build (Linux/macOS bash)
 
-**Recommended (explicit toolchain):**
-
-Windows (PowerShell):
-```powershell
-cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
-cmake --build build
+```bash
+cmake -B build -S .
+cmake --build build --target tetris_gui_sdl
 ````
 
-Linux/macOS (bash):
-
-```bash
-cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
-cmake --build build
-```
-
-### Build options
-
-* `BUILD_GUI` (default: ON) — build wxWidgets GUI executable
-* `BUILD_TESTS` (default: ON) — build unit tests (Catch2 via FetchContent)
-
-Example:
-
-```bash
-cmake -B build -S . -DBUILD_GUI=ON -DBUILD_TESTS=ON
-cmake --build build
-```
+> Output path depends on generator (e.g. `build/Debug/` with MSVC).
 
 ---
 
 ## 4) Running
 
-After building, you will typically have two executables:
-
 ### GUI (main application)
 
-Run:
+Run the SDL executable:
 
-* **`tetris_gui`**
-  This is the main user-facing application (Start menu → Single Player / Multiplayer).
+* **`tetris_gui_sdl`**
 
-### Console (legacy/debug)
+It includes:
 
-Run:
+* Start menu
+* Multiplayer configuration + lobby
+* Multiplayer match screen (TimeAttack / SharedTurns)
 
-* **`tetris_console`**
-  A minimal runner useful for debugging core logic without the GUI.
+### Console (optional / debug)
 
-> The exact output path depends on your generator (e.g., `build/Debug/` on some IDE setups).
+If your project includes it:
+
+* **`tetris_console`** (useful to debug core logic without GUI)
 
 ---
 
-## 5) Multiplayer Usage (Current Intended Flow)
+## 5) Multiplayer Usage
 
-The multiplayer system is designed around:
+### Host
 
-1. Host creates a session and waits for a client to connect
-2. Both players confirm **Ready**
-3. Host sends `StartGame` and the match begins simultaneously
-4. Clients send input actions; host broadcasts state updates
+1. Open **Multiplayer**
+2. Choose **Host**, pick mode + parameters (time limit or pieces-per-turn), choose a port
+3. Wait for a client to join (Lobby shows connection status)
+4. Click **Start Match**
+5. Host simulates and broadcasts snapshots + results
 
-Currently implemented protocol messages include:
+### Client
+
+1. Open **Multiplayer**
+2. Choose **Join**, enter host IP + port, choose your name
+3. Client connects and waits in Lobby
+4. When host starts, client enters match screen automatically
+5. Client sends inputs, renders host snapshots
+
+### Rematch
+
+After match end:
+
+* Both players can request **Rematch**
+* Host restarts the match only when both agree
+* If someone leaves, rematch becomes unavailable and UI shows the disconnect state
+
+---
+
+## 6) Protocol (Current)
+
+Core messages used by the multiplayer system:
 
 * `JoinRequest`, `JoinAccept`
-* `StartGame` (includes mode + parameters + `startTick`)
+* `StartGame`
 * `InputActionMessage`
-* `StateUpdate`
-* `MatchResult`, `Error`
+* `StateUpdate` (snapshot DTO + HUD fields like time left / turn state as implemented)
+* `MatchResult`
+* `Error`
+* (Optional depending on your branch) `PlayerLeft`
 
-> Depending on the current implementation state, the lobby/ready UI and ready-handshake messages may still be pending.
+Serialization is **one message per line** of UTF-8 text.
 
 ---
 
-## 6) Repository Structure
+## 7) Repository Structure
 
 ```
 include/
   core/            # Board, GameState, Tetrominoes, scoring, levels, match rules
   controller/      # GameController, InputAction
-  gui/             # wxWidgets UI (StartFrame, TetrisFrame, panels, dialogs)
-  network/         # Protocol, serialization, host/client TCP networking
+  gui_sdl/         # SDL2 + ImGui screens
+  network/         # Protocol, serialization, host/client networking
 
 src/
   core/
   controller/
-  gui/
+  gui_sdl/
   network/
   utils/
   main_console.cpp
 
 docs/              # IN204 documentation (use cases, specs, architecture, UML)
-tests/             # Unit tests
+tests/             # Unit tests (if enabled)
 CMakeLists.txt
-vcpkg.json
 ```
 
 ---
 
-## 7) Documentation (IN204 Deliverables)
+## 8) Documentation (IN204 Deliverables)
 
-The project documentation targets the IN204 requirements:
+The `docs/` folder contains:
 
-* Use cases (single + multiplayer)
+* Use cases
 * Functional specifications
 * High-level architecture (“gros grains”)
-* Class responsibilities and design patterns
+* Class responsibilities + design patterns
 * UML diagrams (class + key sequences)
-* Implementation notes (build/run, design justifications)
-
-See the `docs/` folder.
-
----
-
-## 8) Testing
-
-Unit tests are built with Catch2 (via CMake FetchContent).
-
-To run tests after building:
-
-* Use `ctest` from the build directory:
-
-```bash
-cd build
-ctest
-```
 
 ---
 
@@ -216,14 +201,9 @@ Developed by:
 * **Gustavo Loiola**
 * **Felipe Biasuz**
 
-Work distributed across:
-
-* Core engine & controller
-* GUI (wxWidgets)
-* Networking & multiplayer logic
-
 ---
 
 ## 10) License
 
 Educational use only (IN204 course project).
+

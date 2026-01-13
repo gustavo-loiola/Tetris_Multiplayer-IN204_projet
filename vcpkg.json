@@ -2,6 +2,22 @@
   "name": "multiplayer-tetris",
   "version-string": "0.1.0",
   "dependencies": [
-    "wxwidgets"
-  ]
+    "wxwidgets",
+    "sdl2",
+    {
+      "name": "imgui",
+      "default-features": false,
+      "features": [
+        "sdl2-binding",
+        "sdl2-renderer-binding"
+      ]
+    }
+  ],
+  "overrides": [
+    {
+      "name": "imgui",
+      "version-string": "1.91.8#2"
+    }
+  ],
+  "builtin-baseline": "5bf0c55239da398b8c6f450818c9e28d36bf9966"
 }

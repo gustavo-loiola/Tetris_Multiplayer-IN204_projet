@@ -111,6 +111,47 @@ if(BUILD_GUI)
 endif()
 
 # =========================
+# SDL2 + ImGui GUI executable
+# =========================
+option(BUILD_SDL_GUI "Build SDL2 + ImGui GUI executable" ON)
+if(BUILD_SDL_GUI)
+    find_package(SDL2 CONFIG REQUIRED)
+    find_package(imgui CONFIG REQUIRED)
+    
+    add_executable(tetris_gui_sdl
+        src/gui_sdl/main_sdl.cpp
+        src/gui_sdl/Application.cpp
+        src/gui_sdl/StartScreen.cpp
+        src/gui_sdl/SinglePlayerScreen.cpp
+        src/gui_sdl/MultiplayerConfigScreen.cpp
+        src/gui_sdl/LobbyScreen.cpp
+        src/gui_sdl/MultiplayerGameScreen.cpp
+    )
+    
+    target_include_directories(tetris_gui_sdl
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    target_link_libraries(tetris_gui_sdl
+        PRIVATE
+            tetris_core
+            tetris_net
+            SDL2::SDL2
+            imgui::imgui
+    )
+
+    # SDL2main is typically needed on Windows only
+    if(TARGET SDL2::SDL2main)
+        target_link_libraries(tetris_gui_sdl PRIVATE SDL2::SDL2main)
+    endif()
+
+    if (WIN32)
+        target_link_libraries(tetris_gui_sdl PRIVATE ws2_32) # optional, usually already via tetris_net
+    endif()
+endif()
+
+# =========================
 # Tests (Catch2)
 # =========================
 FetchContent_Declare(

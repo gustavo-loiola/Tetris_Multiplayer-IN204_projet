@@ -6,20 +6,18 @@
 #include <optional>
 #include <variant>
 
-#include "controller/InputAction.hpp"   // for tetris::controller::InputAction
+#include "controller/InputAction.hpp"
 
 namespace tetris::net {
 
 using PlayerId = std::uint32_t;
 using Tick     = std::uint64_t;
 
-/// High-level game mode identifiers used by the host & clients.
 enum class GameMode {
     TimeAttack,
     SharedTurns
 };
 
-/// Message kind tag for on-the-wire messages.
 enum class MessageKind : std::uint8_t {
     JoinRequest,
     JoinAccept,
@@ -27,6 +25,7 @@ enum class MessageKind : std::uint8_t {
     InputActionMessage,
     StateUpdate,
     MatchResult,
+    PlayerLeft,     // NEW
     Error
 };
 
@@ -38,33 +37,31 @@ struct JoinRequest {
 
 struct JoinAccept {
     PlayerId assignedId;
-    std::string welcomeMessage; // e.g. "Joined lobby xyz"
+    std::string welcomeMessage;
 };
 
 struct StartGame {
     GameMode mode;
-    std::uint32_t timeLimitSeconds;      // For TimeAttack (0 if not used)
-    std::uint32_t piecesPerTurn;        // For SharedTurns (0 if not used)
-    Tick startTick;                      // Host's tick at which the game starts
+    std::uint32_t timeLimitSeconds; // TimeAttack
+    std::uint32_t piecesPerTurn;    // SharedTurns
+    Tick startTick;
 };
 
 struct InputActionMessage {
     PlayerId playerId;
-    Tick clientTick;                     // client-local tick when action happened
+    Tick clientTick;
     tetris::controller::InputAction action;
 };
 
-/// A minimal DTO for game state snapshot.
-/// You will map this from/to your core::GameState / Board.
 struct BoardCellDTO {
     bool occupied{};
-    int colorIndex{};                    // map from your Tetromino color enum or similar
+    int colorIndex{};
 };
 
 struct BoardDTO {
     int width{};
     int height{};
-    std::vector<BoardCellDTO> cells;     // row-major, size = width * height;
+    std::vector<BoardCellDTO> cells;
 };
 
 struct PlayerStateDTO {
@@ -77,10 +74,17 @@ struct PlayerStateDTO {
     bool isAlive{true};
 };
 
+// ✅ NEW: enriquecemos StateUpdate para HUD/qualidade de rede
 struct StateUpdate {
     Tick serverTick{};
     std::vector<PlayerStateDTO> players;
-    // Later you can add flags like "isDelta" vs full snapshot.
+
+    // TimeAttack: host manda tempo restante (evita drift no client)
+    std::uint32_t timeLeftMs{0}; // 0 se não aplicável
+
+    // SharedTurns: host manda de quem é o turno e quantas peças restam
+    PlayerId turnPlayerId{0};          // 0 se não aplicável
+    std::uint32_t piecesLeftThisTurn{0};
 };
 
 enum class MatchOutcome {
@@ -96,6 +100,13 @@ struct MatchResult {
     int finalScore{};
 };
 
+// ✅ NEW: mensagem explícita de saída/desconexão
+struct PlayerLeft {
+    PlayerId playerId{};
+    bool wasHost{false};
+    std::string reason; // "DISCONNECTED", "LEFT_TO_MENU", etc.
+};
+
 struct ErrorMessage {
     std::string description;
 };
@@ -109,6 +120,7 @@ using MessagePayload = std::variant<
     InputActionMessage,
     StateUpdate,
     MatchResult,
+    PlayerLeft,     // NEW
     ErrorMessage
 >;
 

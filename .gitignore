@@ -4,6 +4,7 @@ Debug/
 Release/
 out/
 temp/
+vcpkg_installed/
 # CMake
 CMakeFiles/
 CMakeCache.txt

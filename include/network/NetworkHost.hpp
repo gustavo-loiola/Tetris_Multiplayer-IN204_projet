@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <unordered_set>
 
 #include "network/INetworkSession.hpp"
 #include "network/MultiplayerConfig.hpp"
@@ -13,16 +14,22 @@ namespace tetris::net {
 
 class NetworkHost {
 public:
-    NetworkHost(const MultiplayerConfig& config);
+    explicit NetworkHost(const MultiplayerConfig& config);
 
     void addClient(INetworkSessionPtr session);
 
-    /// Poll all sessions for incoming messages + cleanup disconnected.
+    /// Poll sessions; detects disconnects and broadcasts PlayerLeft.
     void poll();
 
     std::vector<InputActionMessage> consumeInputQueue();
 
     std::size_t playerCount() const { return m_players.size(); }
+
+    /// Rematch: true if at least one connected client is ready (re-sent JoinRequest)
+    bool anyClientReadyForRematch() const;
+
+    /// Rematch: clear readiness flags (called after host restarts)
+    void clearRematchFlags();
 
     bool isMatchStarted() const { return m_matchStarted; }
 
@@ -31,19 +38,21 @@ public:
     void broadcast(const Message& msg);
     void sendTo(PlayerId playerId, const Message& msg);
 
-    // ---- Rematch helpers ----
+    // ✅ helpers para UI / lógica
     bool hasAnyConnectedClient() const;
-    bool anyClientReadyForRematch() const;
-    void clearRematchFlags();
-    bool hasAnyClientDisconnected() const { return m_anyClientDisconnected; }
-    void clearDisconnectedFlag() { m_anyClientDisconnected = false; }
+    std::size_t connectedClientCount() const;
+
+    // opcional: para o MultiplayerGameScreen saber se houve saída
+    bool consumeAnyClientDisconnected();
+
+    static constexpr PlayerId HostPlayerId = 1;
 
 private:
     struct PlayerInfo {
         PlayerId id{};
         INetworkSessionPtr session;
         std::string name;
-        bool readyForRematch{false};
+        bool connected{true};
     };
 
     MultiplayerConfig m_config;
@@ -52,15 +61,17 @@ private:
 
     bool m_matchStarted{false};
     Tick m_startTick{0};
-    PlayerId m_nextPlayerId{1};
+
+    PlayerId m_nextPlayerId{2}; // começa em 2 para reservar 1 ao host
 
     bool m_anyClientDisconnected{false};
 
     void handleIncoming(PlayerId pid, const Message& msg);
-    void handleJoinRequest(PlayerId pid, INetworkSessionPtr session, const JoinRequest& req);
+    void handleJoinRequest(PlayerId assigned, INetworkSessionPtr session, const JoinRequest& req);
     void sendStartGameMessage();
+    void onClientDisconnected(PlayerId pid, const char* reason);
 
-    void cleanupDisconnected();
+    std::unordered_set<PlayerId> m_rematchReady;
 };
 
 } // namespace tetris::net

@@ -81,40 +81,39 @@ std::string serialize(const Message& msg)
            << static_cast<int>(m.action); // assumes InputAction is enum class
         break;
     }
-    case MessageKind::StateUpdate: {
-        os << "STATE_UPDATE;";
-        const auto& m = std::get<StateUpdate>(msg.payload);
+        case MessageKind::StateUpdate: {
+            os << "STATE_UPDATE;";
+            const auto& m = std::get<StateUpdate>(msg.payload);
 
-        // serverTick;playerCount
-        os << m.serverTick << ';' << m.players.size();
+            // serverTick;playerCount;timeLeftMs;turnPlayerId;piecesLeftThisTurn
+            os << m.serverTick << ';'
+            << m.players.size() << ';'
+            << m.timeLeftMs << ';'
+            << m.turnPlayerId << ';'
+            << m.piecesLeftThisTurn;
 
-        // then each player
-        for (const auto& p : m.players) {
-            os << ';'
-               << p.id << ';'
-               << escape(p.name) << ';'
-               << p.score << ';'
-               << p.level << ';'
-               << (p.isAlive ? 1 : 0) << ';'
-               << p.board.width << ';'
-               << p.board.height << ';';
+            for (const auto& p : m.players) {
+                os << ';'
+                << p.id << ';'
+                << escape(p.name) << ';'
+                << p.score << ';'
+                << p.level << ';'
+                << (p.isAlive ? 1 : 0) << ';'
+                << p.board.width << ';'
+                << p.board.height << ';';
 
-            // cells: occupied:colorIndex,occupied:colorIndex,...
-            const auto cellCount = static_cast<std::size_t>(
-                std::max(0, p.board.width) * std::max(0, p.board.height)
-            );
-            for (std::size_t i = 0; i < cellCount; ++i) {
-                if (i > 0) {
-                    os << ',';
+                const auto cellCount = static_cast<std::size_t>(
+                    std::max(0, p.board.width) * std::max(0, p.board.height)
+                );
+
+                for (std::size_t i = 0; i < cellCount; ++i) {
+                    if (i > 0) os << ',';
+                    const auto& cell = p.board.cells[i];
+                    os << (cell.occupied ? 1 : 0) << ':' << cell.colorIndex;
                 }
-                const auto& cell = p.board.cells[i];
-                os << (cell.occupied ? 1 : 0) << ':' << cell.colorIndex;
             }
+            break;
         }
-        // append timeLeftSeconds at the end (keeps backward compatibility)
-        os << ';' << m.timeLeftSeconds;
-        break;
-    }
     case MessageKind::MatchResult: {
         os << "MATCH_RESULT;";
         const auto& m = std::get<MatchResult>(msg.payload);
@@ -122,6 +121,14 @@ std::string serialize(const Message& msg)
            << m.playerId << ';'
            << static_cast<int>(m.outcome) << ';'
            << m.finalScore;
+        break;
+    }
+        case MessageKind::PlayerLeft: {
+        os << "PLAYER_LEFT;";
+        const auto& m = std::get<PlayerLeft>(msg.payload);
+        os << m.playerId << ';'
+           << (m.wasHost ? 1 : 0) << ';'
+           << escape(m.reason);
         break;
     }
     case MessageKind::Error: {
@@ -224,93 +231,92 @@ std::optional<Message> deserialize(const std::string& line)
         msg.kind = MessageKind::Error;
         msg.payload = std::move(payload);
         return msg;
-    } else if (type == "STATE_UPDATE") {
-        std::string tickStr, countStr;
-        if (!std::getline(is, tickStr, ';')) return std::nullopt;
-        if (!std::getline(is, countStr, ';')) return std::nullopt;
+        } else if (type == "STATE_UPDATE") {
+            std::string tickStr, countStr, timeLeftStr, turnPidStr, piecesLeftStr;
 
-        StateUpdate update;
-        update.serverTick = static_cast<Tick>(std::stoull(tickStr));
-        const auto playerCount = static_cast<std::size_t>(std::stoul(countStr));
+            if (!std::getline(is, tickStr, ';')) return std::nullopt;
+            if (!std::getline(is, countStr, ';')) return std::nullopt;
+            if (!std::getline(is, timeLeftStr, ';')) return std::nullopt;
+            if (!std::getline(is, turnPidStr, ';')) return std::nullopt;
+            if (!std::getline(is, piecesLeftStr, ';')) return std::nullopt;
 
-        update.players.reserve(playerCount);
+            StateUpdate update;
+            update.serverTick = static_cast<Tick>(std::stoull(tickStr));
+            const auto playerCount = static_cast<std::size_t>(std::stoul(countStr));
+            update.timeLeftMs = static_cast<std::uint32_t>(std::stoul(timeLeftStr));
+            update.turnPlayerId = static_cast<PlayerId>(std::stoul(turnPidStr));
+            update.piecesLeftThisTurn = static_cast<std::uint32_t>(std::stoul(piecesLeftStr));
 
-        for (std::size_t i = 0; i < playerCount; ++i) {
-            std::string idStr, nameStr, scoreStr, levelStr, aliveStr, wStr, hStr, cellsStr;
+            update.players.reserve(playerCount);
 
-            if (!std::getline(is, idStr, ';'))    return std::nullopt;
-            if (!std::getline(is, nameStr, ';'))  return std::nullopt;
-            if (!std::getline(is, scoreStr, ';')) return std::nullopt;
-            if (!std::getline(is, levelStr, ';')) return std::nullopt;
-            if (!std::getline(is, aliveStr, ';')) return std::nullopt;
-            if (!std::getline(is, wStr, ';'))     return std::nullopt;
-            if (!std::getline(is, hStr, ';'))     return std::nullopt;
+            for (std::size_t i = 0; i < playerCount; ++i) {
+                std::string idStr, nameStr, scoreStr, levelStr, aliveStr, wStr, hStr, cellsStr;
 
-            // Cell data: either up to next ';' or end of line (getline handles both).
-            if (!std::getline(is, cellsStr, ';')) {
-                // For the last player, this still succeeds: it just reads to end.
-                // If it truly fails (no data at all), treat as error.
-                return std::nullopt;
-            }
+                if (!std::getline(is, idStr, ';'))    return std::nullopt;
+                if (!std::getline(is, nameStr, ';'))  return std::nullopt;
+                if (!std::getline(is, scoreStr, ';')) return std::nullopt;
+                if (!std::getline(is, levelStr, ';')) return std::nullopt;
+                if (!std::getline(is, aliveStr, ';')) return std::nullopt;
+                if (!std::getline(is, wStr, ';'))     return std::nullopt;
+                if (!std::getline(is, hStr, ';'))     return std::nullopt;
+                if (!std::getline(is, cellsStr, ';')) return std::nullopt;
 
-            PlayerStateDTO dto;
-            dto.id       = static_cast<PlayerId>(std::stoul(idStr));
-            dto.name     = unescape(nameStr);
-            dto.score    = std::stoi(scoreStr);
-            dto.level    = std::stoi(levelStr);
-            dto.isAlive  = (std::stoi(aliveStr) != 0);
-            dto.board.width  = std::stoi(wStr);
-            dto.board.height = std::stoi(hStr);
+                PlayerStateDTO dto;
+                dto.id      = static_cast<PlayerId>(std::stoul(idStr));
+                dto.name    = unescape(nameStr);
+                dto.score   = std::stoi(scoreStr);
+                dto.level   = std::stoi(levelStr);
+                dto.isAlive = (std::stoi(aliveStr) != 0);
+                dto.board.width  = std::stoi(wStr);
+                dto.board.height = std::stoi(hStr);
 
-            const int w = dto.board.width;
-            const int h = dto.board.height;
-            const std::size_t expectedCells =
-                (w > 0 && h > 0) ? static_cast<std::size_t>(w) * static_cast<std::size_t>(h) : 0;
+                const int w = dto.board.width;
+                const int h = dto.board.height;
+                const std::size_t expectedCells =
+                    (w > 0 && h > 0) ? static_cast<std::size_t>(w) * static_cast<std::size_t>(h) : 0;
 
-            dto.board.cells.clear();
+                dto.board.cells.clear();
 
-            if (expectedCells > 0) {
-                auto tokens = splitSimple(cellsStr, ',');
-                if (tokens.size() != expectedCells) {
-                    // Protocol error: mismatch between claimed board size and cell count.
-                    return std::nullopt;
-                }
+                if (expectedCells > 0) {
+                    auto tokens = splitSimple(cellsStr, ',');
+                    if (tokens.size() != expectedCells) return std::nullopt;
 
-                dto.board.cells.reserve(expectedCells);
-                for (const auto& token : tokens) {
-                    const auto pos = token.find(':');
-                    if (pos == std::string::npos) {
-                        return std::nullopt;
+                    dto.board.cells.reserve(expectedCells);
+                    for (const auto& token : tokens) {
+                        const auto pos = token.find(':');
+                        if (pos == std::string::npos) return std::nullopt;
+
+                        const auto occStr   = token.substr(0, pos);
+                        const auto colorStr = token.substr(pos + 1);
+
+                        BoardCellDTO cell;
+                        cell.occupied  = (std::stoi(occStr) != 0);
+                        cell.colorIndex = std::stoi(colorStr);
+                        dto.board.cells.push_back(cell);
                     }
-                    const auto occStr   = token.substr(0, pos);
-                    const auto colorStr = token.substr(pos + 1);
-
-                    BoardCellDTO cell;
-                    cell.occupied  = (std::stoi(occStr) != 0);
-                    cell.colorIndex = std::stoi(colorStr);
-                    dto.board.cells.push_back(cell);
                 }
+
+                update.players.push_back(std::move(dto));
             }
 
-            update.players.push_back(std::move(dto));
-        }
+            msg.kind = MessageKind::StateUpdate;
+            msg.payload = std::move(update);
+            return msg;
+        } else if (type == "PLAYER_LEFT") {
+            std::string pidStr, wasHostStr, reasonStr;
+            if (!std::getline(is, pidStr, ';')) return std::nullopt;
+            if (!std::getline(is, wasHostStr, ';')) return std::nullopt;
+            std::getline(is, reasonStr);
 
-        // optional trailing timeLeftSeconds (if not present, keep 0)
-        std::string timeLeftStr;
-        if (std::getline(is, timeLeftStr)) {
-            if (!timeLeftStr.empty()) {
-                update.timeLeftSeconds = static_cast<std::uint32_t>(std::stoul(timeLeftStr));
-            } else {
-                update.timeLeftSeconds = 0;
+            PlayerLeft payload;
+            payload.playerId = static_cast<PlayerId>(std::stoul(pidStr));
+            payload.wasHost = (std::stoi(wasHostStr) != 0);
+            payload.reason = unescape(reasonStr);
+
+            msg.kind = MessageKind::PlayerLeft;
+            msg.payload = std::move(payload);
+            return msg;
             }
-        } else {
-            update.timeLeftSeconds = 0; // backward compatible with older messages
-        }
-
-        msg.kind = MessageKind::StateUpdate;
-        msg.payload = std::move(update);
-        return msg;
-    }
 
     return std::nullopt;
 }

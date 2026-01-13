@@ -4,13 +4,14 @@
 #include "network/MultiplayerConfig.hpp"
 #include "network/MessageTypes.hpp"
 #include "core/GameState.hpp"
+#include "core/Types.hpp"
 #include "controller/GameController.hpp"
 
 #include <imgui.h>     // ImDrawList / ImU32 / ImVec2
 #include <optional>
 #include <memory>
 #include <mutex>
-#include <cstdint>     // std::uint64_t
+#include <cstdint>
 
 namespace tetris::net {
 class NetworkHost;
@@ -40,22 +41,44 @@ private:
     bool isHost_ = true;                 // host/offline if client_ == nullptr
     std::uint64_t clientTick_ = 0;       // client-side tick for InputActionMessage
     tetris::net::Tick serverTick_ = 0;   // host-side tick for StateUpdate
+    tetris::net::Tick lastStartTickSeen_ = 0;
 
+    // Snapshot sending (host)
     float snapshotAccSec_ = 0.0f;
     const float snapshotPeriodSec_ = 0.05f; // 20 Hz
 
-    // ---- Match end / result (TimeAttack first) ----
+    // -------- SharedTurns (host authoritative + HUD) --------
+    tetris::net::PlayerId turnPlayerId_ = 1;     // host starts by default
+    std::uint32_t piecesLeftThisTurn_ = 0;       // init from cfg_.piecesPerTurn in ctor
+    bool boardHashInit_ = false;
+    std::uint32_t lastBoardHash_ = 0;
+
+    void updateSharedTurnsTurnHost();
+
+    static std::uint32_t boardHash(const tetris::core::Board& b);
+
+    // -------- Disconnect / net quality --------
+    bool hostDisconnected_ = false;       // client: detected host is gone
+    bool opponentDisconnected_ = false;   // host: detected client left / client: opponent left
+    float timeSinceLastSnapshotSec_ = 0.0f;
+    float snapshotTimeoutSec_ = 2.0f;
+
+    // -------- TimeAttack timer (client display from StateUpdate) --------
+    std::uint32_t displayTimeLeftMs_ = 0;
+
+    // ---- Match end / result ----
     bool matchEnded_ = false;
     float matchElapsedSec_ = 0.0f;
+
     bool hostWantsRematch_ = false;
     bool clientWantsRematch_ = false;
     bool waitingRematchStart_ = false;
 
-    std::optional<tetris::net::MatchResult> localMatchResult_;   // for host view
-    std::optional<tetris::net::MatchResult> clientMatchResult_;  // what host sent to client (for debug)
+    std::optional<tetris::net::MatchResult> localMatchResult_;
+    std::optional<tetris::net::MatchResult> clientMatchResult_;
 
-    void tryFinalizeMatchHost(); // host-side: decides winner + sends MatchResult
-    void renderMatchOverlay(Application& app, int w, int h); // draws popup overlay on both host/client
+    void tryFinalizeMatchHost();
+    void renderMatchOverlay(Application& app, int w, int h);
 
     // Client received snapshot (authoritative render)
     mutable std::mutex stateMutex_;
@@ -71,8 +94,7 @@ private:
     tetris::core::GameState sharedGame_;
     tetris::controller::GameController sharedCtrl_;
 
-    // (offline AI only)
-    float oppInputAcc_ = 0.0f;
+    float oppInputAcc_ = 0.0f; // offline AI only
 
     // ---------- INPUT ----------
     static std::optional<tetris::controller::InputAction> actionFromKey(SDL_Keycode key);
@@ -81,8 +103,8 @@ private:
                            tetris::controller::GameController& gc,
                            tetris::controller::InputAction action);
 
-    void applyRemoteInputsHost();      // host consumes InputActionMessage queue
-    void stepOpponentAI(float dtSeconds); // offline only
+    void applyRemoteInputsHost();
+    void stepOpponentAI(float dtSeconds);
 
     // ---------- SNAPSHOT (host -> StateUpdate) ----------
     static int colorIndexForTetromino(tetris::core::TetrominoType t);

@@ -25,6 +25,10 @@ public:
     bool isJoined() const;
     std::optional<PlayerId> playerId() const;
 
+    bool isConnected() const {
+        return m_session && m_session->isConnected();
+    }
+
     void setStartGameHandler(StartGameHandler handler) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_startGameHandler = std::move(handler);
@@ -40,9 +44,19 @@ public:
         m_matchResultHandler = std::move(handler);
     }
 
-    std::optional<StateUpdate> lastStateUpdate() const;
-    std::optional<MatchResult> lastMatchResult() const;
-    std::optional<StartGame>  lastStartGame() const;
+    // --- "Peek" semantics (do not clear) ---
+    std::optional<StateUpdate>  lastStateUpdate() const;
+    std::optional<MatchResult>  lastMatchResult() const;
+    std::optional<StartGame>    lastStartGame() const;
+    std::optional<PlayerLeft>   lastPlayerLeft() const;
+    std::optional<ErrorMessage> lastError() const;
+
+    // --- Consume semantics: returns ONCE then clears it ---
+    std::optional<StateUpdate>  consumeStateUpdate();
+    std::optional<MatchResult>  consumeMatchResult();
+    std::optional<StartGame>    consumeStartGame();
+    std::optional<PlayerLeft>   consumePlayerLeft();
+    std::optional<ErrorMessage> consumeError();
 
 private:
     void handleMessage(const Message& msg);
@@ -55,7 +69,7 @@ private:
 
     std::optional<PlayerId> m_playerId;
 
-    StartGameHandler   m_startGameHandler;
+    StartGameHandler m_startGameHandler;
     std::optional<StartGame> m_lastStartGame;
 
     StateUpdateHandler m_stateUpdateHandler;
@@ -63,6 +77,9 @@ private:
 
     MatchResultHandler m_matchResultHandler;
     std::optional<MatchResult> m_lastMatchResult;
+
+    std::optional<PlayerLeft> m_lastPlayerLeft;
+    std::optional<ErrorMessage> m_lastError;
 };
 
 } // namespace tetris::net

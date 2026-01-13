@@ -126,3 +126,40 @@ if(BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
     add_subdirectory(tests)
 endif()
+
+
+# =========================
+# Network TCP demo executable
+# =========================
+add_executable(network_tcp_demo
+    src/network_tcp_demo.cpp
+)
+
+# Linka as libs já existentes
+target_link_libraries(network_tcp_demo
+    PRIVATE
+        tetris_core
+        tetris_net
+)
+
+target_include_directories(network_tcp_demo
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# =========================
+# Console multiplayer demo executable
+# =========================
+add_executable(console_multiplayer_demo
+    src/console_multiplayer_demo.cpp
+)
+
+# Linka as libs já existentes
+target_link_libraries(console_multiplayer_demo
+    PRIVATE
+        tetris_core
+        tetris_net
+)
+
+target_include_directories(console_multiplayer_demo
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+)

@@ -55,6 +55,8 @@ This separation allows the game engine to remain independent from the UI and net
 * C++17 or later
 * CMake ≥ 3.10
 * [vcpkg](https://github.com/microsoft/vcpkg) installed
+* vcpkg install wxwidgets:x64-mingw
+
 
 ### **Setting up vcpkg**
 

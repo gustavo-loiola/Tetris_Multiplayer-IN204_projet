@@ -10,6 +10,7 @@ set(TEST_SOURCES
     test_shared_turn_rules.cpp 
     test_host_game_session.cpp
     test_state_update_mapper.cpp
+    test_network_level0.cpp
 )
 
 add_executable(tetris_tests

@@ -3,6 +3,8 @@
 #include "core/MatchRules.hpp"
 #include "network/MessageTypes.hpp"
 
+#include <algorithm>
+
 using tetris::core::PlayerSnapshot;
 using tetris::core::SharedTurnRules;
 using tetris::net::MatchOutcome;

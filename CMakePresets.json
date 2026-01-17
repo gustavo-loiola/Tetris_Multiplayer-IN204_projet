@@ -7,22 +7,25 @@
   "configurePresets": [
     {
       "name": "default",
-      "generator": "Ninja",
+      "description": "Configure project with vcpkg toolchain and all options ON",
+      "generator": "Visual Studio 18 2026",
       "binaryDir": "build",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": {
-          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-          "type": "STRING"
-        },
-        "BUILD_GUI": {
-          "value": "ON",
-          "type": "BOOL"
-        },
-        "BUILD_TESTS": {
-          "value": "ON",
-          "type": "BOOL"
-        }
+        "CMAKE_TOOLCHAIN_FILE": "${env.VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "BUILD_GUI": "ON",
+        "BUILD_SDL_GUI": "ON",
+        "BUILD_TESTS": "ON",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_GENERATOR_PLATFORM": "x64"
       }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "description": "Build all targets",
+      "configuration": "Release"
     }
   ]
 }

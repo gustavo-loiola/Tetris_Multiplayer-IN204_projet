@@ -1,13 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
+
+# --- Always use Vcpkg toolchain ---
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
+endif()
+
 project(MultiplayerTetris LANGUAGES CXX)
 include(FetchContent)
-
-# --- vcpkg integration (optional, but handy for cross-machine builds) ---
-if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-    # Use vcpkg toolchain if the user has VCPKG_ROOT set
-    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        CACHE STRING "Vcpkg toolchain file")
-endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -57,10 +56,6 @@ if (WIN32)
     target_link_libraries(tetris_net PRIVATE ws2_32)
 endif()
 
-# If later the network layer needs symbols from tetris_core
-# (e.g. converting GameState <-> DTOs), we can add:
-# target_link_libraries(tetris_net PUBLIC tetris_core)
-
 # =========================
 # Console executable
 # =========================
@@ -77,13 +72,16 @@ target_include_directories(tetris_console
 )
 
 # =========================
-# GUI executable (wxWidgets)
+# GUI executable (wxWidgets + NanoSVG)
 # =========================
 option(BUILD_GUI "Build GUI executable" ON)
 
 if(BUILD_GUI)
-    # Use config-mode find_package provided by vcpkg
+    # wxWidgets via vcpkg
     find_package(wxWidgets CONFIG REQUIRED)
+    
+    # NanoSVG via vcpkg
+    find_package(NanoSVG CONFIG REQUIRED)
 
     add_executable(tetris_gui WIN32
         src/gui/TetrisApp.cpp
@@ -92,7 +90,7 @@ if(BUILD_GUI)
         src/gui/NextPiecePanel.cpp
         src/gui/StartFrame.cpp
         src/gui/MultiplayerConfigDialog.cpp
-        src/gui/RemoteBoardPanel.cpp          
+        src/gui/RemoteBoardPanel.cpp
         src/gui/MultiplayerFrame.cpp
     )
 
@@ -107,14 +105,22 @@ if(BUILD_GUI)
             tetris_net
             wx::core
             wx::base
+            NanoSVG::nanosvg
+            NanoSVG::nanosvgrast
     )
 endif()
+
 
 # =========================
 # SDL2 + ImGui GUI executable
 # =========================
 option(BUILD_SDL_GUI "Build SDL2 + ImGui GUI executable" ON)
 if(BUILD_SDL_GUI)
+
+    if(NOT DEFINED VCPKG_TARGET_TRIPLET)
+        set(VCPKG_TARGET_TRIPLET "x64-windows" CACHE STRING "Vcpkg target triplet")
+    endif()
+
     find_package(SDL2 CONFIG REQUIRED)
     find_package(imgui CONFIG REQUIRED)
     
@@ -141,13 +147,12 @@ if(BUILD_SDL_GUI)
             imgui::imgui
     )
 
-    # SDL2main is typically needed on Windows only
     if(TARGET SDL2::SDL2main)
         target_link_libraries(tetris_gui_sdl PRIVATE SDL2::SDL2main)
     endif()
 
     if (WIN32)
-        target_link_libraries(tetris_gui_sdl PRIVATE ws2_32) # optional, usually already via tetris_net
+        target_link_libraries(tetris_gui_sdl PRIVATE ws2_32)
     endif()
 endif()
 
@@ -157,7 +162,7 @@ endif()
 FetchContent_Declare(
     Catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG        v3.11.0  # or any recent stable v3 tag
+    GIT_TAG        v3.11.0
 )
 
 option(BUILD_TESTS "Build unit tests" ON)

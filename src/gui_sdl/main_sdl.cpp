@@ -5,7 +5,7 @@
 
 int main(int, char**) {
     tetris::gui_sdl::Application app;
-    if (!app.init("Multiplayer Tetris (SDL2 + ImGui)", 900, 700)) {
+    if (!app.init("Tetris - IN204 Project - Made by Gustavo Loiola and Felipe Biasuz", 900, 700)) {
         return 1;
     }
 

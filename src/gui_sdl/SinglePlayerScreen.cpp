@@ -417,12 +417,12 @@ void SinglePlayerScreen::renderNextPieceWindow(int x, int y, int w, int h) const
         ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoMove;
 
-    ImGui::Begin("Next", nullptr, flags);
+    ImGui::Begin("Next Piece", nullptr, flags);
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 wp = ImGui::GetWindowPos();
 
-    const float pad = 18.0f;
+    const float pad = 25.0f;
     const float areaW = (float)w - pad * 2.0f;
     const float areaH = (float)h - 60.0f;
     const float side = (std::min)(areaW, areaH);
@@ -432,7 +432,7 @@ void SinglePlayerScreen::renderNextPieceWindow(int x, int y, int w, int h) const
 
     dl->AddRect(a0, a1, IM_COL32(120, 120, 120, 120), 6.0f);
     for (int i = 1; i < 4; ++i) {
-        float t = side * (i / 4.0f);
+        float t = side * (i / 4.5f);
         dl->AddLine(ImVec2(a0.x + t, a0.y), ImVec2(a0.x + t, a1.y), IM_COL32(120, 120, 120, 50));
         dl->AddLine(ImVec2(a0.x, a0.y + t), ImVec2(a1.x, a0.y + t), IM_COL32(120, 120, 120, 50));
     }
@@ -454,7 +454,7 @@ void SinglePlayerScreen::renderNextPieceWindow(int x, int y, int w, int h) const
         minC = std::min(minC, b.col); maxC = std::max(maxC, b.col);
     }
 
-    const float cell = side / 4.0f;
+    const float cell = side / 4.5f;
     const float pieceW = (maxC - minC + 1) * cell;
     const float pieceH = (maxR - minR + 1) * cell;
     const float ox = a0.x + (side - pieceW) * 0.5f - minC * cell;
@@ -468,7 +468,6 @@ void SinglePlayerScreen::renderNextPieceWindow(int x, int y, int w, int h) const
     }
 
     ImGui::Dummy(ImVec2(0, (float)h - 60.0f));
-    ImGui::TextUnformatted("Z/Q: CCW  |  X/E: CW");
 
     ImGui::End();
 }

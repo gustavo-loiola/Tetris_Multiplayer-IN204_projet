@@ -25,7 +25,15 @@ std::uint32_t MultiplayerGameScreen::boardHash(const tetris::core::Board& b)
     std::uint32_t h = 2166136261u; // FNV-1a
     for (int r = 0; r < b.rows(); ++r) {
         for (int c = 0; c < b.cols(); ++c) {
-            const auto v = (b.cell(r, c) == tetris::core::CellState::Filled) ? 1u : 0u;
+            //const auto v = (b.cell(r, c) == tetris::core::CellState::Filled) ? 1u : 0u;
+            //h ^= (v + 31u * (std::uint32_t)r + 131u * (std::uint32_t)c);
+            const bool occ = (b.cell(r, c) == tetris::core::CellState::Filled);
+            std::uint32_t v = occ ? 1u : 0u;
+            if (occ) {
+                if (auto t = b.cellType(r, c)) {
+                    v = 10u + static_cast<std::uint32_t>(*t); // small salt by type
+                }
+            }
             h ^= (v + 31u * (std::uint32_t)r + 131u * (std::uint32_t)c);
             h *= 16777619u;
         }
@@ -320,12 +328,21 @@ MultiplayerGameScreen::makeBoardDTOFromGame(const tetris::core::GameState& gs, b
         return static_cast<std::size_t>(r * dto.width + c);
     };
 
-    // Locked cells: occupied, but no color info in your core => grey (0)
+    // Locked cells: occupied + color index from core board (set when piece locks).
     for (int r = 0; r < dto.height; ++r) {
         for (int c = 0; c < dto.width; ++c) {
-            auto& cell = dto.cells[idx(r,c)];
-            cell.occupied = (b.cell(r,c) == tetris::core::CellState::Filled);
-            cell.colorIndex = cell.occupied ? 0 : 0;
+            auto& cell = dto.cells[idx(r, c)];
+            const bool occ = (b.cell(r, c) == tetris::core::CellState::Filled);
+            cell.occupied = occ;
+
+            if (!occ) {
+                cell.colorIndex = 0;
+                continue;
+            }
+
+            // If type is known, use it; otherwise fallback to grey (0).
+            const auto t = b.cellType(r, c);
+            cell.colorIndex = t ? colorIndexForTetromino(*t) : 0;
         }
     }
 
@@ -636,11 +653,17 @@ void MultiplayerGameScreen::drawBoardFromGame(ImDrawList* dl, const tetris::core
 
     for (int r = 0; r < rows; ++r) {
         for (int c = 0; c < cols; ++c) {
-            if (b.cell(r, c) == tetris::core::CellState::Filled) {
-                ImVec2 p0(topLeft.x + c * cell + 1, topLeft.y + r * cell + 1);
-                ImVec2 p1(p0.x + cell - 2, p0.y + cell - 2);
-                dl->AddRectFilled(p0, p1, locked);
+            if (b.cell(r, c) != tetris::core::CellState::Filled) continue;
+
+            ImU32 col = locked;
+            if (const auto t = b.cellType(r, c)) {
+                col = colorFromIndex(colorIndexForTetromino(*t));
             }
+
+            ImVec2 p0(topLeft.x + c * cell + 1, topLeft.y + r * cell + 1);
+            ImVec2 p1(p0.x + cell - 2, p0.y + cell - 2);
+            dl->AddRectFilled(p0, p1, col);
+            dl->AddRect(p0, p1, IM_COL32(20, 20, 20, 255));
         }
     }
 

@@ -321,10 +321,18 @@ void SinglePlayerScreen::renderBoard(SDL_Renderer* renderer, int x, int y, int c
     SDL_SetRenderDrawColor(renderer, 90, 90, 95, 255);
     for (int r = 0; r < rows; ++r) {
         for (int c = 0; c < cols; ++c) {
-            if (board.cell(r, c) == tetris::core::CellState::Filled) {
-                SDL_Rect cell{x + c * cellSize + 1, y + r * cellSize + 1, cellSize - 2, cellSize - 2};
-                SDL_RenderFillRect(renderer, &cell);
-            }
+            if (board.cell(r, c) != tetris::core::CellState::Filled) continue;
+
+            // If we know which tetromino filled this cell, color it.
+            const auto t = board.cellType(r, c);
+            ImU32 col = t ? colorForTetromino(*t) : IM_COL32(90, 90, 95, 255);
+
+            std::uint8_t rr, gg, bb, aa;
+            unpackImU32(col, rr, gg, bb, aa);
+            SDL_SetRenderDrawColor(renderer, rr, gg, bb, aa);
+
+            SDL_Rect cell{x + c * cellSize + 1, y + r * cellSize + 1, cellSize - 2, cellSize - 2};
+            SDL_RenderFillRect(renderer, &cell);
         }
     }
 

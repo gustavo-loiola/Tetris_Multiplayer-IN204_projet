@@ -22,6 +22,10 @@ public:
     CellState cell(int row, int col) const;
     void setCell(int row, int col, CellState state);
 
+    // If the cell is filled, returns which tetromino type filled it (if known).
+    // This is used by GUIs to render colored locked blocks.
+    std::optional<TetrominoType> cellType(int row, int col) const;
+
     // Check if tetromino can be placed (no collision with walls or filled cells)
     bool canPlace(const Tetromino& tetromino) const noexcept;
 
@@ -38,6 +42,7 @@ private:
     int rows_;
     int cols_;
     std::vector<CellState> grid_; // rows_ * cols_
+    std::vector<std::optional<TetrominoType>> typeGrid_; // same size as grid_
 
     int index(int row, int col) const noexcept {
         return row * cols_ + col;

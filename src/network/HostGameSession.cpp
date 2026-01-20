@@ -68,6 +68,9 @@ HostGameSession::update(Tick currentTick,
 
             m_host.sendTo(r.playerId, msg);
         }
+
+        // Allow StartGame to be sent again on rematch.
+        m_host.onMatchFinished();
     }
 
     return results;

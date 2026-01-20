@@ -153,8 +153,14 @@ void MultiplayerGameScreen::handleEvent(Application& app, const SDL_Event& e)
     if (key == SDLK_BACKSPACE) {
         if (cfg_.isHost && host_) {
             tetris::net::Message msg;
-            msg.kind = tetris::net::MessageKind::Error;
-            msg.payload = tetris::net::ErrorMessage{ "HOST_LEFT" };
+            msg.kind = tetris::net::MessageKind::PlayerLeft;
+
+            tetris::net::PlayerLeft pl;
+            pl.playerId = tetris::net::NetworkHost::HostPlayerId; // usually 1
+            pl.wasHost  = true;
+            pl.reason   = "LEFT_TO_MENU";
+
+            msg.payload = std::move(pl);
             host_->broadcast(msg);
         }
         app.setScreen(std::make_unique<StartScreen>());
@@ -438,6 +444,22 @@ void MultiplayerGameScreen::update(Application&, float dtSeconds)
         bool gotSnapshot = false;
 
         if (client_) {
+            // NEW: if host explicitly left (PlayerLeft) or socket dropped, notify immediately
+            if (auto pl = client_->consumePlayerLeft()) {
+                if (pl->wasHost) {
+                    hostDisconnected_ = true;
+                    matchEnded_ = true;
+                    waitingRematchStart_ = false;
+                }
+            }
+
+            // If the underlying session is dead (host closed/crashed), mark disconnected
+            // This requires NetworkClient::isConnected().
+            if (!client_->isConnected()) {
+                hostDisconnected_ = true;
+                matchEnded_ = true;
+                waitingRematchStart_ = false;
+            }
 
             // 1) If host restarted the match, this MUST clear the overlay immediately.
             if (auto sg = client_->consumeStartGame()) {
@@ -491,20 +513,23 @@ void MultiplayerGameScreen::update(Application&, float dtSeconds)
             }
         }
 
-        // 4) Timeout only if NOT matchEnded (so overlay doesn't flicker)
-        if (!matchEnded_) {
+        // 4) Timeout should ALSO run while waiting for rematch start,
+        // otherwise client won't notice host leaving during the overlay.
+        const bool shouldTimeout = (!matchEnded_); // do NOT timeout on snapshot absence during overlay
+
+        if (shouldTimeout && !hostDisconnected_) {
             timeSinceLastSnapshotSec_ += dtSeconds;
             if (gotSnapshot) timeSinceLastSnapshotSec_ = 0.0f;
 
             if (timeSinceLastSnapshotSec_ >= snapshotTimeoutSec_) {
                 hostDisconnected_ = true;
                 matchEnded_ = true;
+                waitingRematchStart_ = false;
             }
         }
 
         return;
     }
-
 
     // ---------------- HOST ----------------
     if (host_) host_->poll();
@@ -520,6 +545,8 @@ void MultiplayerGameScreen::update(Application&, float dtSeconds)
         hostRes.outcome = tetris::net::MatchOutcome::Win;
         hostRes.finalScore = static_cast<int>(localGame_.score());
         localMatchResult_ = hostRes;
+
+        host_->onMatchFinished();  // IMPORTANT: allow future StartGame
         return;
     }
 
@@ -1106,6 +1133,10 @@ void MultiplayerGameScreen::tryFinalizeMatchHost()
     msg.kind = tetris::net::MessageKind::MatchResult;
     msg.payload = clientRes;
     host_->broadcast(msg);
+
+    if (host_) {
+        host_->onMatchFinished(); // allow StartGame to be sent again on rematch
+}
 }
 
 void MultiplayerGameScreen::renderMatchOverlay(Application& app, int w, int h)
@@ -1189,7 +1220,7 @@ void MultiplayerGameScreen::renderMatchOverlay(Application& app, int w, int h)
 
     if (cfg_.isHost) {
         opponentPresent = host_ && host_->hasAnyConnectedClient();
-        opponentReady   = host_ && host_->anyClientReadyForRematch();
+        opponentReady   = host_ && host_->allConnectedClientsReadyForRematch();
 
         if (!opponentPresent) {
             ImGui::TextColored(ImVec4(1,0.35f,0.35f,1), "Opponent left. Rematch unavailable.");
@@ -1202,6 +1233,14 @@ void MultiplayerGameScreen::renderMatchOverlay(Application& app, int w, int h)
         ImGui::BeginDisabled(!opponentPresent);
         if (ImGui::Button(hostWantsRematch_ ? "Rematch: READY (click to cancel)" : "Rematch (I am ready)", ImVec2(-1, 42))) {
             hostWantsRematch_ = !hostWantsRematch_;
+
+            // Tell client our decision (assumes single client is PlayerId=2 in this SDL mode)
+            if (host_) {
+                tetris::net::Message m;
+                m.kind = tetris::net::MessageKind::RematchDecision;
+                m.payload = tetris::net::RematchDecision{ hostWantsRematch_ };
+                host_->sendTo(2u, m);
+            }
         }
         ImGui::EndDisabled();
 
@@ -1255,7 +1294,10 @@ void MultiplayerGameScreen::renderMatchOverlay(Application& app, int w, int h)
             if (client_ && !clientWantsRematch_) {
                 clientWantsRematch_ = true;
                 waitingRematchStart_ = true;
-                client_->start(); // resend JoinRequest => host marks readyForRematch
+                //client_->start(); // resend JoinRequest => host marks readyForRematch
+                
+                // Proper rematch handshake
+                client_->sendRematchDecision(true);
             }
         }
     }

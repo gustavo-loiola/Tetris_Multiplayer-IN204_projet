@@ -4,6 +4,7 @@
 #include <optional>
 #include <functional>
 #include <mutex>
+#include <chrono>
 
 #include "network/INetworkSession.hpp"
 #include "network/MessageTypes.hpp"
@@ -21,6 +22,8 @@ public:
 
     void start();
     void sendInput(tetris::controller::InputAction action, Tick clientTick);
+
+    void sendRematchDecision(bool wantsRematch);
 
     bool isJoined() const;
     std::optional<PlayerId> playerId() const;
@@ -58,6 +61,9 @@ public:
     std::optional<PlayerLeft>   consumePlayerLeft();
     std::optional<ErrorMessage> consumeError();
 
+    // For UI: detect liveness even if no StateUpdate is flowing.
+    std::chrono::milliseconds timeSinceLastHeard() const;
+
 private:
     void handleMessage(const Message& msg);
 
@@ -80,6 +86,8 @@ private:
 
     std::optional<PlayerLeft> m_lastPlayerLeft;
     std::optional<ErrorMessage> m_lastError;
+
+    std::chrono::steady_clock::time_point m_lastHeardFromHost{};
 };
 
 } // namespace tetris::net

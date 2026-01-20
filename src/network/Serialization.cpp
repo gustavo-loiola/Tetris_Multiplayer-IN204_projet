@@ -137,6 +137,16 @@ std::string serialize(const Message& msg)
         os << escape(m.description);
         break;
     }
+    case MessageKind::RematchDecision: {
+        os << "REMATCH_DECISION;";
+        const auto& m = std::get<RematchDecision>(msg.payload);
+        os << (m.wantsRematch ? 1 : 0);
+        break;
+    }
+    case MessageKind::KeepAlive: {
+        os << "KEEPALIVE";
+        break;
+    }
     }
 
     return os.str();
@@ -316,7 +326,21 @@ std::optional<Message> deserialize(const std::string& line)
             msg.kind = MessageKind::PlayerLeft;
             msg.payload = std::move(payload);
             return msg;
-            }
+        } else if (type == "REMATCH_DECISION") {
+            std::string vStr;
+            std::getline(is, vStr);
+
+            RematchDecision payload;
+            payload.wantsRematch = (std::stoi(vStr) != 0);
+
+            msg.kind = MessageKind::RematchDecision;
+            msg.payload = std::move(payload);
+            return msg;
+        } else if (type == "KEEPALIVE") {
+            msg.kind = MessageKind::KeepAlive;
+            msg.payload = KeepAlive{};
+            return msg;
+        }
 
     return std::nullopt;
 }

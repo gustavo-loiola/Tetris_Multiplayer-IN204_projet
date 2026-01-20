@@ -6,6 +6,10 @@ NetworkClient::NetworkClient(INetworkSessionPtr session, std::string playerName)
     : m_session(std::move(session))
     , m_playerName(std::move(playerName))
 {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_lastHeardFromHost = std::chrono::steady_clock::now();
+    }
     if (m_session) {
         m_session->setMessageHandler(
             [this](const Message& msg) { handleMessage(msg); }
@@ -136,6 +140,11 @@ void NetworkClient::handleMessage(const Message& msg)
     StateUpdateHandler stateCb;
     MatchResultHandler resultCb;
 
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_lastHeardFromHost = std::chrono::steady_clock::now();
+    }
+
     switch (msg.kind) {
 
     case MessageKind::JoinAccept: {
@@ -201,9 +210,31 @@ void NetworkClient::handleMessage(const Message& msg)
         break;
     }
 
+    case MessageKind::KeepAlive: {
+        // Already updated m_lastHeardFromHost above; nothing else needed.
+        break;
+    }
+
     default:
         break;
     }
+}
+
+std::chrono::milliseconds NetworkClient::timeSinceLastHeard() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const auto now = std::chrono::steady_clock::now();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastHeardFromHost);
+}
+
+void NetworkClient::sendRematchDecision(bool wantsRematch)
+{
+    if (!m_session || !m_session->isConnected()) return;
+
+    Message msg;
+    msg.kind = MessageKind::RematchDecision;
+    msg.payload = RematchDecision{ wantsRematch };
+    m_session->send(msg);
 }
 
 } // namespace tetris::net

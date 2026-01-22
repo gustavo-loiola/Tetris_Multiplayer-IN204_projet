@@ -53,6 +53,9 @@ private:
     bool boardHashInit_ = false;
     std::uint32_t lastBoardHash_ = 0;
 
+    // in SharedTurns, used to decide who caused the GameOver (last input applier)
+    tetris::net::PlayerId lastActionPlayerId_ = 1;
+
     void updateSharedTurnsTurnHost();
 
     static std::uint32_t boardHash(const tetris::core::Board& b);

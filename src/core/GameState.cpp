@@ -97,17 +97,25 @@ void GameState::moveRight() {
 
 void GameState::softDrop() {
     if (status_ != GameStatus::Running || !activeTetromino_) return;
-    tryMove(1, 0);
+
+    if (tryMove(1, 0)) {
+        // Player-initiated soft drop: +1 per cell moved
+        scoreManager_.addSoftDropCells(1);
+    }
 }
 
 void GameState::hardDrop() {
     if (status_ != GameStatus::Running || !activeTetromino_) return;
-    if (!activeTetromino_) return;
+
+    int droppedCells = 0;
 
     // Drop until we can’t move further
     while (tryMove(1, 0)) {
-        // keep dropping
+        ++droppedCells;
     }
+
+    // Player-initiated hard drop: +2 per cell moved
+    scoreManager_.addHardDropCells(droppedCells);
 
     lockActiveTetrominoAndProcessLines();
 

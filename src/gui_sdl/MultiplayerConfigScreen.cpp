@@ -36,7 +36,7 @@ void MultiplayerConfigScreen::render(Application& app)
     app.getWindowSize(w, h);
 
     ImGui::SetNextWindowPos(ImVec2(w * 0.5f, h * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(520, 360), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(560, 280), ImGuiCond_Always);
 
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoResize |

@@ -59,7 +59,7 @@ void StartScreen::render(Application& app)
     // ---- SDL background animation (behind menu) ----
     renderPieces(app.renderer());
 
-    // optional: darken slightly so menu is readable
+    // darken slightly so menu is readable
     SDL_Renderer* r = app.renderer();
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r, 0, 0, 0, 70);
@@ -69,15 +69,15 @@ void StartScreen::render(Application& app)
 
     // ---- ImGui start menu (on top) ----
     ImGui::SetNextWindowPos(ImVec2(w * 0.5f, h * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(400, 260), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiCond_Always);
 
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoMove;
 
-    ImGui::Begin("Multiplayer Tetris", nullptr, flags);
-    ImGui::TextUnformatted("IN204 - SDL2 + Dear ImGui");
+    ImGui::Begin("Start Screen", nullptr, flags);
+    ImGui::TextUnformatted("IN204 - Tetris Project");
     ImGui::Separator();
 
     if (ImGui::Button("Single Player", ImVec2(-1, 44))) {

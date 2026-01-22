@@ -5,6 +5,8 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <mutex>
+#include <chrono>
 
 #include "network/INetworkSession.hpp"
 #include "network/MultiplayerConfig.hpp"
@@ -25,24 +27,27 @@ public:
 
     std::size_t playerCount() const { return m_players.size(); }
 
-    /// Rematch: true if at least one connected client is ready (re-sent JoinRequest)
-    bool anyClientReadyForRematch() const;
+    // Rematch handshake:
+    // - each client can send RematchDecision{true/false}
+    // - host should only restart if ALL connected clients want rematch
+    bool allConnectedClientsReadyForRematch() const;
+    bool anyClientDeclinedRematch() const;
 
-    /// Rematch: clear readiness flags (called after host restarts)
+    /// Rematch: clear readiness flags (called after match finishes or after restart)
     void clearRematchFlags();
 
     bool isMatchStarted() const { return m_matchStarted; }
 
     void startMatch();
+    void onMatchFinished(); // resets m_matchStarted so StartGame can be sent again
 
     void broadcast(const Message& msg);
     void sendTo(PlayerId playerId, const Message& msg);
 
-    // ✅ helpers para UI / lógica
+    // helpers for UI / logic
     bool hasAnyConnectedClient() const;
     std::size_t connectedClientCount() const;
 
-    // opcional: para o MultiplayerGameScreen saber se houve saída
     bool consumeAnyClientDisconnected();
 
     static constexpr PlayerId HostPlayerId = 1;
@@ -72,6 +77,14 @@ private:
     void onClientDisconnected(PlayerId pid, const char* reason);
 
     std::unordered_set<PlayerId> m_rematchReady;
+    std::unordered_set<PlayerId> m_rematchDeclined;
+
+    // TcpSession invokes message handlers on a background thread.
+    // Protect shared state with a single small mutex.
+    mutable std::mutex m_mutex;
+
+    // KeepAlive ticker
+    std::chrono::steady_clock::time_point m_lastKeepAlive{};
 };
 
 } // namespace tetris::net

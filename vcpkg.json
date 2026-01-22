@@ -4,6 +4,7 @@
   "dependencies": [
     "wxwidgets",
     "sdl2",
+    "nanosvg",
     {
       "name": "imgui",
       "default-features": false,

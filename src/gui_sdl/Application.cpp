@@ -139,6 +139,7 @@ int Application::run() {
         last = now;
 
         if (m_screen) {
+            if (!m_running) {dt = 0;}
             m_screen->update(*this, dt);
         }
 

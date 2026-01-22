@@ -5,6 +5,7 @@
 #include "gui_sdl/Application.hpp"
 #include "gui_sdl/StartScreen.hpp"
 #include "gui_sdl/MultiplayerGameScreen.hpp"
+#include "gui_sdl/MultiplayerConfigScreen.hpp"
 
 #include "network/TcpServer.hpp"
 #include "network/TcpSession.hpp"
@@ -96,7 +97,7 @@ void LobbyScreen::render(Application& app)
     app.getWindowSize(w, h);
 
     ImGui::SetNextWindowPos(ImVec2(w * 0.5f, h * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(580, 360), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(400, 240), ImGuiCond_Always);
 
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoResize |
@@ -163,8 +164,8 @@ void LobbyScreen::render(Application& app)
 
     ImGui::Separator();
 
-    if (ImGui::Button("Back to Menu", ImVec2(160, 0))) {
-        app.setScreen(std::make_unique<StartScreen>());
+    if (ImGui::Button("Back", ImVec2(160, 0))) {
+        app.setScreen(std::make_unique<MultiplayerConfigScreen>());
         ImGui::End();
         return;
     }

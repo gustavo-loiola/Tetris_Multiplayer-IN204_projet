@@ -25,8 +25,10 @@ enum class MessageKind : std::uint8_t {
     InputActionMessage,
     StateUpdate,
     MatchResult,
-    PlayerLeft,     // NEW
-    Error
+    PlayerLeft,     
+    Error,
+    RematchDecision,
+    KeepAlive
 };
 
 // ---------- Individual message payloads ----------
@@ -74,7 +76,6 @@ struct PlayerStateDTO {
     bool isAlive{true};
 };
 
-// ✅ NEW: enriquecemos StateUpdate para HUD/qualidade de rede
 struct StateUpdate {
     Tick serverTick{};
     std::vector<PlayerStateDTO> players;
@@ -100,7 +101,7 @@ struct MatchResult {
     int finalScore{};
 };
 
-// ✅ NEW: mensagem explícita de saída/desconexão
+// mensagem explícita de saída/desconexão
 struct PlayerLeft {
     PlayerId playerId{};
     bool wasHost{false};
@@ -111,6 +112,18 @@ struct ErrorMessage {
     std::string description;
 };
 
+// --- Rematch/Lobby minimal handshake ---
+// Each peer sends RematchDecision after MatchResult.
+// Host starts a new match only when both want rematch.
+struct RematchDecision {
+    bool wantsRematch{false};
+};
+
+// --- Liveness ---
+// Host periodically sends KeepAlive while connected to prevent client-side
+// "no messages => disconnected" heuristics during post-match/lobby.
+struct KeepAlive {};
+
 // ---------- Message envelope ----------
 
 using MessagePayload = std::variant<
@@ -120,8 +133,10 @@ using MessagePayload = std::variant<
     InputActionMessage,
     StateUpdate,
     MatchResult,
-    PlayerLeft,     // NEW
-    ErrorMessage
+    PlayerLeft,    
+    ErrorMessage,
+    RematchDecision,
+    KeepAlive
 >;
 
 struct Message {

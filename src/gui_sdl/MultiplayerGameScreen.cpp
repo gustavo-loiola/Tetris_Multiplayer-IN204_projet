@@ -262,29 +262,6 @@ void MultiplayerGameScreen::updateSharedTurnsTurnHost()
     }
 }
 
-// ------------------ offline AI (optional) ------------------
-
-void MultiplayerGameScreen::stepOpponentAI(float dtSeconds)
-{
-    if (host_ || client_) return;
-    if (cfg_.mode != tetris::net::GameMode::TimeAttack) return;
-    if (oppGame_.status() != tetris::core::GameStatus::Running) return;
-
-    oppInputAcc_ += dtSeconds;
-    if (oppInputAcc_ < 0.20f) return;
-    oppInputAcc_ = 0.0f;
-
-    static std::mt19937 rng{std::random_device{}()};
-    std::uniform_int_distribution<int> dist(0, 9);
-    int r = dist(rng);
-
-    using tetris::controller::InputAction;
-    if (r <= 3) oppCtrl_.handleAction(InputAction::MoveLeft);
-    else if (r <= 7) oppCtrl_.handleAction(InputAction::MoveRight);
-    else if (r == 8) oppCtrl_.handleAction(InputAction::RotateCW);
-    else oppCtrl_.handleAction(InputAction::SoftDrop);
-}
-
 // ------------------ DTO mapping (host snapshot) ------------------
 
 int MultiplayerGameScreen::colorIndexForTetromino(tetris::core::TetrominoType t)
@@ -1119,7 +1096,7 @@ void MultiplayerGameScreen::renderMatchOverlay(Application& app, int w, int h)
 
     if (hostDisconnected_ && !cfg_.isHost) {
         ImGui::SetNextWindowPos(ImVec2(w * 0.5f, h * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-        ImGui::SetNextWindowSize(ImVec2(520, 260), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(500, 150), ImGuiCond_Always);
 
         ImGuiWindowFlags flags =
             ImGuiWindowFlags_NoResize |
@@ -1148,6 +1125,8 @@ void MultiplayerGameScreen::renderMatchOverlay(Application& app, int w, int h)
         return;
     }
 
+    const bool isSharedTurns = (cfg_.mode == tetris::net::GameMode::SharedTurns);
+
     auto outcomeToText = [](tetris::net::MatchOutcome o) -> const char* {
         switch (o) {
             case tetris::net::MatchOutcome::Win:  return "YOU WIN!";
@@ -1157,9 +1136,9 @@ void MultiplayerGameScreen::renderMatchOverlay(Application& app, int w, int h)
         return "MATCH OVER";
     };
 
-    const char* title = outcomeToText(localMatchResult_->outcome);
+    const char* title = isSharedTurns ? "GAME OVER" : outcomeToText(localMatchResult_->outcome);
 
-    const ImVec2 size(500, 320);
+    const ImVec2 size(500, 250);
     ImGui::SetNextWindowPos(ImVec2(w * 0.5f, h * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(size, ImGuiCond_Always);
 
@@ -1176,14 +1155,18 @@ void MultiplayerGameScreen::renderMatchOverlay(Application& app, int w, int h)
     ImGui::SetWindowFontScale(1.0f);
 
     ImGui::Separator();
-    ImGui::Text("Final score: %d", localMatchResult_->finalScore);
+    if (isSharedTurns) {
+        ImGui::Text("Shared score: %d", localMatchResult_->finalScore);
+    } else {
+        ImGui::Text("Final score: %d", localMatchResult_->finalScore);
+    }
 
     if (opponentDisconnected_) {
         ImGui::Spacing();
         ImGui::TextColored(ImVec4(1, 0.6f, 0.2f, 1), "Opponent disconnected.");
     }
 
-    if (cfg_.mode == tetris::net::GameMode::TimeAttack && cfg_.timeLimitSeconds > 0) {
+    if (!isSharedTurns && cfg_.mode == tetris::net::GameMode::TimeAttack && cfg_.timeLimitSeconds > 0) {
         ImGui::Text("Time limit: %u s", cfg_.timeLimitSeconds);
     }
 

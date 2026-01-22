@@ -75,72 +75,80 @@ SinglePlayerScreen::Layout SinglePlayerScreen::computeLayout(int windowW, int wi
     const int cols = gameState_.board().cols();
 
     const int margin = 20;
-    const int bottomReserve = 120; // smaller reserve now that controls are compact
+    const int bottomReserve = 120;
 
-    // Default values; we override nextW/nextH later based on cell size.
-    L.nextW = 240;
-    L.nextH = 210;
+    // We want: [Left HUD]  margin  [Board centered]  margin  [Next Piece]
+    // Left/right panel widths scale with cell size (clamped).
+    auto panelWForCell = [](int cell) {
+        return std::clamp(cell * 8, 220, 340);
+    };
 
-    // Side-by-side attempt
-    {
-        const int usableW = windowW - (margin * 3) - L.nextW;
-        const int usableH = windowH - (margin * 2) - bottomReserve;
+    // Start from height-driven cell size, then shrink until width fits.
+    int cellFromH = (windowH - (margin * 2) - bottomReserve) / rows;
+    int cell = std::clamp(cellFromH, 16, 44);
 
-        int cellFromW = usableW / cols;
-        int cellFromH = usableH / rows;
-        int cell = std::min(cellFromW, cellFromH);
-        cell = std::clamp(cell, 16, 44);
+    for (; cell >= 16; --cell) {
+        const int boardW = cols * cell;
+        const int boardH = rows * cell;
+        const int leftW  = panelWForCell(cell);
+        const int rightW = panelWForCell(cell);
 
-        int boardW = cols * cell;
-        int boardH = rows * cell;
-        int groupW = boardW + margin + L.nextW;
+        const int totalW = leftW + margin + boardW + margin + rightW;
+        const int maxW = windowW - margin * 2;
 
-        if (usableW > 0 && usableH > 0 && groupW <= windowW - margin * 2) {
-            L.sideBySide = true;
+        if (totalW <= maxW) {
             L.cell = cell;
             L.boardW = boardW;
             L.boardH = boardH;
 
-            L.groupW = groupW;
-            L.groupX = (windowW - groupW) / 2;
-
-            L.boardX = L.groupX;
-            L.nextX  = L.boardX + L.boardW + margin;
-
+            // Board always centered.
+            L.boardX = (windowW - boardW) / 2;
+            const int usableH = windowH - (margin * 2) - bottomReserve;
             L.boardY = margin + std::max(0, (usableH - boardH) / 2);
-            L.nextY  = L.boardY;
+
+            // Left panel uses Layout::groupX/groupW as "left panel X/W"
+            L.groupW = leftW;
+            L.groupX = L.boardX - margin - leftW;
+
+            // Right panel uses Layout::nextX/nextW as "right panel X/W"
+            L.nextW = rightW;
+            L.nextX = L.boardX + boardW + margin;
+            L.nextY = L.boardY; // align top with board
+
+            // Keep existing flag field (not used anymore, but harmless)
+            L.sideBySide = true;
 
             return L;
         }
     }
 
-    // Stacked fallback
+    // Fallback: center board only, panels will be placed stacked in render().
     {
-        const int usableW = windowW - margin * 2;
-        const int usableH = windowH - (margin * 3) - bottomReserve - L.nextH;
+        const int boardCellFromW = (windowW - margin * 2) / cols;
+        const int boardCellFromH2 = (windowH - margin * 2 - bottomReserve) / rows;
+        const int cell2 = std::clamp(std::min(boardCellFromW, boardCellFromH2), 16, 44);
 
-        int cellFromW = usableW / cols;
-        int cellFromH = usableH / rows;
-        int cell = std::min(cellFromW, cellFromH);
-        cell = std::clamp(cell, 16, 44);
+        L.cell = cell2;
+        L.boardW = cols * cell2;
+        L.boardH = rows * cell2;
+        L.boardX = (windowW - L.boardW) / 2;
 
-        L.sideBySide = false;
-        L.cell = cell;
-        L.boardW = cols * cell;
-        L.boardH = rows * cell;
+        const int usableH = windowH - (margin * 2) - bottomReserve;
+        L.boardY = margin + std::max(0, (usableH - L.boardH) / 2);
 
-        L.groupW = std::max(L.boardW, L.nextW);
+        // Put panels under the board as a safe fallback.
+        L.groupW = panelWForCell(cell2);
         L.groupX = (windowW - L.groupW) / 2;
 
-        L.boardX = L.groupX + (L.groupW - L.boardW) / 2;
-        L.boardY = margin;
+        L.nextW = panelWForCell(cell2);
+        L.nextX = (windowW - L.nextW) / 2;
+        L.nextY = L.boardY + L.boardH + margin;
 
-        L.nextX  = L.groupX + (L.groupW - L.nextW) / 2;
-        L.nextY  = L.boardY + L.boardH + margin;
-
+        L.sideBySide = false;
         return L;
     }
 }
+
 
 void SinglePlayerScreen::handleEvent(Application& app, const SDL_Event& e)
 {
@@ -261,43 +269,33 @@ void SinglePlayerScreen::render(Application& app)
 
     Layout L = computeLayout(winW, winH);
 
-    // Responsive right-column sizing based on cell size
     const int margin = 16;
-    const int nextW = std::clamp(L.cell * 8, 220, 340);
-    const int nextH = std::clamp(L.cell * 7 + 60, 200, 300); // preview + hint
-    const int gameW = nextW;
-
-    // Game height will be auto-sized by ImGui (no scrollbars), but we still set a reasonable max
-    const int gameH = 0; // 0 => autosize
-
-    // Right column position stays next to board
-    const int rightX = L.nextX;
-    const int topY   = L.boardY;
-
-    const int gameX = rightX;
-    const int gameY = topY;
-
-    const int nextX = rightX;
-    const int nextY = gameY + 170 + margin; // enough room for Game content
-
-    // Controls under Next
-    const int ctrlW = nextW;
-    const int ctrlH = 160;
-    int ctrlX = rightX;
-    int ctrlY = nextY + nextH + margin;
-
-    // If not enough room under next, pin to bottom but never overlap next
-    if (ctrlY + ctrlH > winH - margin) {
-        ctrlY = std::max(nextY + nextH + margin, winH - ctrlH - margin);
-    }
 
     SDL_Renderer* renderer = app.renderer();
-
     renderBoard(renderer, L.boardX, L.boardY, L.cell);
     renderBoardOverlayText(L);
 
+    // LEFT: Game + Controls
+    int gameX = L.groupX;
+    int gameY = L.sideBySide ? L.nextY : (L.nextY + L.nextH + margin); // fallback under next
+    int gameW = L.groupW;
+    int gameH = 0; // autosize
+
+    int ctrlX = gameX;
+    int ctrlY = gameY + 190 + margin; // under stats
+    int ctrlW = L.groupW;
+    int ctrlH = 0; // autosize (we'll set flags in renderHUD)
+
+    // RIGHT: Next Piece (smaller, from Layout)
+    int nextX = L.nextX;
+    int nextY = L.nextY;
+    int nextW = L.nextW;
+    int nextH = L.nextH;
+
     renderNextPieceWindow(nextX, nextY, nextW, nextH);
-    renderHUD(app, winW, winH, L, gameX, gameY, gameW, gameH, ctrlX, ctrlY, ctrlW, ctrlH);
+    renderHUD(app, winW, winH, L,
+              gameX, gameY, gameW, gameH,
+              ctrlX, ctrlY, ctrlW, ctrlH);
 }
 
 void SinglePlayerScreen::renderBoard(SDL_Renderer* renderer, int x, int y, int cellSize) const
@@ -420,24 +418,39 @@ void SinglePlayerScreen::renderNextPieceWindow(int x, int y, int w, int h) const
     ImGui::SetNextWindowPos(ImVec2((float)x, (float)y), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2((float)w, (float)h), ImGuiCond_Always);
 
+    // No frame: no title bar, no border, no background.
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoMove;
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoBackground |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse;
 
-    ImGui::Begin("Next Piece", nullptr, flags);
+    // Use an internal name (##) so it doesn't display as a title.
+    ImGui::Begin("##NextPiece", nullptr, flags);
+
+    // Label only (requested)
+    ImGui::TextUnformatted("Next Piece");
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 wp = ImGui::GetWindowPos();
+    ImVec2 cp = ImGui::GetCursorScreenPos();
 
-    const float pad = 25.0f;
-    const float areaW = (float)w - pad * 2.0f;
-    const float areaH = (float)h - 60.0f;
+    // Drawing area under the label
+    const float pad = 10.0f;
+    const float labelH = ImGui::GetTextLineHeightWithSpacing();
+    const float areaX0 = wp.x + pad;
+    const float areaY0 = wp.y + labelH + pad;
+    const float areaW  = (float)w - pad * 2.0f;
+    const float areaH  = (float)h - (labelH + pad * 2.0f);
+
     const float side = (std::min)(areaW, areaH);
-
-    const ImVec2 a0(wp.x + pad + (areaW - side) * 0.5f, wp.y + pad);
+    const ImVec2 a0(areaX0 + (areaW - side) * 0.5f, areaY0 + (areaH - side) * 0.5f);
     const ImVec2 a1(a0.x + side, a0.y + side);
 
+    // Grid behind piece (requested)
     dl->AddRect(a0, a1, IM_COL32(120, 120, 120, 120), 6.0f);
     for (int i = 1; i < 4; ++i) {
         float t = side * (i / 4.5f);
@@ -446,7 +459,6 @@ void SinglePlayerScreen::renderNextPieceWindow(int x, int y, int w, int h) const
     }
 
     if (!gameState_.nextTetromino().has_value()) {
-        ImGui::TextUnformatted("No next piece");
         ImGui::End();
         return;
     }
@@ -475,10 +487,9 @@ void SinglePlayerScreen::renderNextPieceWindow(int x, int y, int w, int h) const
         dl->AddRect(ImVec2(bx + 1, by + 1), ImVec2(bx + cell - 2, by + cell - 2), IM_COL32(20, 20, 20, 255));
     }
 
-    ImGui::Dummy(ImVec2(0, (float)h - 60.0f));
-
     ImGui::End();
 }
+
 
 void SinglePlayerScreen::renderHUD(Application& app, int /*windowW*/, int /*windowH*/, const Layout&,
                                   int gameX, int gameY, int gameW, int /*gameH*/,
@@ -532,11 +543,16 @@ void SinglePlayerScreen::renderHUD(Application& app, int /*windowW*/, int /*wind
 
     ImGui::End();
 
-    // Controls: separate window, but never overlaps Next (render() ensures Y is safe)
+    // Controls: auto-size (no internal scrollbars). Wider panel comes from computeLayout().
     ImGui::SetNextWindowPos(ImVec2((float)ctrlX, (float)ctrlY), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2((float)ctrlW, (float)ctrlH), ImGuiCond_Always);
+    ImGui::SetNextWindowSizeConstraints(ImVec2((float)ctrlW, 0.0f), ImVec2((float)ctrlW, 500.0f));
     ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
-    ImGui::Begin("Controls", nullptr, fixedFlags);
+
+    ImGui::Begin("Controls", nullptr,
+                fixedFlags |
+                ImGuiWindowFlags_AlwaysAutoResize |
+                ImGuiWindowFlags_NoScrollbar |
+                ImGuiWindowFlags_NoScrollWithMouse);
 
     ImGui::TextUnformatted("A/D or Left/Right: Move (hold)");
     ImGui::TextUnformatted("S or Down: Soft drop (hold)");
@@ -550,6 +566,7 @@ void SinglePlayerScreen::renderHUD(Application& app, int /*windowW*/, int /*wind
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 
     ImGui::End();
+
 }
 
 } // namespace tetris::gui_sdl

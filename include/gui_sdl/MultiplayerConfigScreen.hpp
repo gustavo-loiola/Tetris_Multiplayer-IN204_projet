@@ -17,6 +17,7 @@ private:
     tetris::net::MultiplayerConfig cfg_;
 
     // UI buffers
+    char playerNameBuf_[256];
     char hostAddressBuf_[256]{};
     int port_{5000};
     int modeIndex_{0}; // 0=TimeAttack, 1=SharedTurns

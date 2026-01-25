@@ -76,8 +76,9 @@ void StartScreen::render(Application& app)
         ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoMove;
 
-    ImGui::Begin("Start Screen", nullptr, flags);
-    ImGui::TextUnformatted("IN204 - Tetris Project");
+    ImGui::Begin("Tetris", nullptr, flags);
+    //ImGui::Begin("Start Screen", nullptr, flags);
+    //ImGui::TextUnformatted("IN204 - Tetris Project");
     ImGui::Separator();
 
     if (ImGui::Button("Single Player", ImVec2(-1, 44))) {

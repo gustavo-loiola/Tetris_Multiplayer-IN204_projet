@@ -54,7 +54,7 @@ void LobbyScreen::ensureClientStarted()
 
     connected_ = true;
 
-    client_ = std::make_shared<tetris::net::NetworkClient>(clientSession_, std::string(nameBuf_));
+    client_ = std::make_shared<tetris::net::NetworkClient>(clientSession_, cfg_.playerName);
 
     // manda join uma vez
     client_->start();
@@ -121,7 +121,6 @@ void LobbyScreen::render(Application& app)
     ImGui::Separator();
 
     if (!cfg_.isHost) {
-        ImGui::InputText("Name", nameBuf_, IM_ARRAYSIZE(nameBuf_));
         ImGui::Text("Connecting to: %s:%u", cfg_.hostAddress.c_str(), cfg_.port);
         ImGui::Text("Connection: %s", connected_ ? "Connected" : "Not connected");
 
@@ -159,7 +158,38 @@ void LobbyScreen::render(Application& app)
         ImGui::Text("Listening on port: %u", cfg_.port);
         ImGui::Text("Server: %s", (server_ && server_->isRunning()) ? "Running" : "Stopped");
         ImGui::Text("Client connected: %s", connected_ ? "Yes" : "No");
-        ImGui::Text("Players in host: %u", host_ ? static_cast<unsigned>(host_->playerCount()) : 0u);
+        ImGui::Text("Players in lobby: %u", host_ ? static_cast<unsigned>(host_->playerCount()+1) : 0u);
+        if (ImGui::BeginTable("PlayersTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            // Header row
+            ImGui::TableSetupColumn("ID");
+            ImGui::TableSetupColumn("Name");
+            ImGui::TableSetupColumn("Status");
+            ImGui::TableHeadersRow();
+
+            // Show host first
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Text("%u", 1); // host ID
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%s", cfg_.playerName.c_str());
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("Host");
+
+            // Then show connected clients
+            const auto players = host_->getLobbyPlayers();
+            for (const auto& p : players) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("%u", static_cast<unsigned>(p.id));
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%s", p.name.c_str());
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%s", p.connected ? "Connected" : "Disconnected");
+            }
+
+            ImGui::EndTable();
+        }
+
     }
 
     ImGui::Separator();

@@ -161,7 +161,11 @@ void LobbyScreen::render(Application& app)
         ImGui::Text("Players in lobby: %u", host_ ? static_cast<unsigned>(host_->playerCount()+1) : 0u);
         if (ImGui::BeginTable("PlayersTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
             // Header row
-            ImGui::TableSetupColumn("ID");
+            ImGui::TableSetupColumn(
+                "ID",
+                ImGuiTableColumnFlags_WidthFixed,
+                40.0f   // largura em pixels
+            );
             ImGui::TableSetupColumn("Name");
             ImGui::TableSetupColumn("Status");
             ImGui::TableHeadersRow();
@@ -194,17 +198,45 @@ void LobbyScreen::render(Application& app)
 
     ImGui::Separator();
 
-    if (ImGui::Button("Back", ImVec2(160, 0))) {
+    // Centering calculations for the bottom buttons
+
+    // Labels depend on role
+    const char* backLabel  = "Back";
+    const char* startLabel = cfg_.isHost
+        ? "Start Match"
+        : "Start Match (host only)";
+
+    // Compute button widths from text + padding
+    const ImGuiStyle& style = ImGui::GetStyle();
+
+    float backWidth =
+        ImGui::CalcTextSize(backLabel).x + style.FramePadding.x * 2.0f;
+
+    float startWidth =
+        ImGui::CalcTextSize(startLabel).x + style.FramePadding.x * 2.0f;
+
+    float spacing = style.ItemSpacing.x;
+
+    // Total width of the button row
+    float totalWidth = backWidth + spacing + startWidth;
+
+    // Center horizontally
+    float availWidth = ImGui::GetContentRegionAvail().x;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availWidth - totalWidth) * 0.5f);
+
+    // ---- Buttons ----
+    if (ImGui::Button(backLabel)) {
         app.setScreen(std::make_unique<MultiplayerConfigScreen>());
         ImGui::End();
         return;
     }
 
+    ImGui::SameLine();
+
     if (cfg_.isHost) {
-        ImGui::SameLine();
         bool canStart = connected_ && host_ && host_->playerCount() >= 1;
         ImGui::BeginDisabled(!canStart);
-        if (ImGui::Button("Start Match", ImVec2(160, 0))) {
+        if (ImGui::Button(startLabel)) {
             host_->startMatch();
             app.setScreen(std::make_unique<MultiplayerGameScreen>(cfg_, host_, nullptr));
             ImGui::EndDisabled();
@@ -213,13 +245,13 @@ void LobbyScreen::render(Application& app)
         }
         ImGui::EndDisabled();
     } else {
-        ImGui::SameLine();
         ImGui::BeginDisabled(true);
-        ImGui::Button("Start Match (host only)", ImVec2(200, 0));
+        ImGui::Button(startLabel);
         ImGui::EndDisabled();
     }
 
     ImGui::End();
+
 }
 
 } // namespace tetris::gui_sdl

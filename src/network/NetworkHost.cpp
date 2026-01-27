@@ -328,4 +328,22 @@ void NetworkHost::onMatchFinished()
     m_rematchDeclined.clear();
 }
 
+std::vector<NetworkHost::LobbyPlayer> NetworkHost::getLobbyPlayers() const
+{
+    std::vector<LobbyPlayer> out;
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    out.reserve(m_players.size());
+
+    for (const auto& [pid, info] : m_players) {
+        out.push_back(LobbyPlayer{
+            info.id,
+            info.name.empty() ? "<joining...>" : info.name,
+            info.connected
+        });
+    }
+
+    return out;
+}
+
 } // namespace tetris::net

@@ -11,6 +11,8 @@ struct MultiplayerConfig {
     bool isHost{true};               // true = host, false = join
     GameMode mode{GameMode::TimeAttack};
 
+    std::string playerName;
+
     std::uint32_t timeLimitSeconds{180};  // used for TimeAttack (0 = no limit)
     std::uint32_t piecesPerTurn{1};       // used for SharedTurns (>=1)
 

@@ -1,295 +1,341 @@
 # Architecture – Multiplayer Tetris (IN204)
 
-This document describes the high-level architecture (“architecture gros grains”) of the Multiplayer Tetris project, implemented in modern C++ with a modular, evolutive design. The project currently supports a **SDL2 + ImGui** GUI front-end and a **TCP host-authoritative multiplayer** model.
+This document describes the **high-level architecture** of the Multiplayer Tetris project.
+The system is implemented in **modern C++ (C++17)** and follows a **modular, evolutive design** separating gameplay logic, controllers, networking, and user interface.
 
-## 1. Goals
+The project currently provides:
 
-The architecture aims to:
+* a **SDL2 + Dear ImGui** graphical front-end,
+* a **TCP-based, host-authoritative multiplayer model**,
+* multiple multiplayer modes implemented via **match rule strategies**.
 
-* Keep the **core game engine independent** from UI and networking.
-* Support incremental extension of gameplay through **pluggable match rules** (Strategy).
-* Allow multiple front-ends (console, SDL/ImGui) without impacting the engine.
-* Provide online multiplayer with an **authoritative host** and a lightweight message protocol.
-* Keep networking message handling isolated (DTO mapping + serialization), so it can evolve without touching the core.
+---
+
+## 1. Architectural Goals
+
+The architecture is designed to:
+
+* Strictly separate **game rules** from **UI** and **networking**.
+* Make the **core gameplay engine reusable** in different contexts (single-player, multiplayer, console, GUI).
+* Support **multiple multiplayer modes** through interchangeable rule strategies.
+* Use a **host-authoritative networking model** to ensure consistency and fairness.
+* Isolate protocol and serialization concerns so the networking layer can evolve independently.
+* Favor **maintainability, testability, and extensibility**.
 
 ---
 
 ## 2. Repository Modules (Macro-Architecture)
 
-### 2.1 Core (Game Logic) – `tetris_core`
+The project is decomposed into the following major modules:
 
-**Location**
+```
+tetris_core        → gameplay rules and state
+controller         → time-based control and input application
+tetris_net         → networking, protocol, and multiplayer orchestration
+tetris_gui_sdl     → SDL2 + ImGui user interface
+tetris_console     → minimal console-based runner (debug / legacy)
+```
 
-* Headers: `include/core/*`, `include/controller/*`
-* Sources: `src/core/*`, `src/controller/*`
+Dependencies follow a **strict direction**:
 
-**Responsibilities**
+```
+GUI / Networking
+        ↓
+   Controller
+        ↓
+      Core
+```
 
-* Represent the board, pieces, and internal state (`GameState`).
-* Enforce movement/rotation/collision/line clearing.
-* Maintain lifecycle (`Running`, `Paused`, `GameOver`).
-* Compute scoring and level progression.
-* Provide match rule strategies for multiplayer modes.
-* Provide the update loop through `GameController`.
+The core module never depends on UI or networking.
 
-**Key classes/files**
+---
 
-* `Board` (`include/core/Board.hpp`, `src/core/Board.cpp`)
-* `Tetromino`, `TetrominoFactory` (`include/core/Tetromino*.hpp`, `src/core/Tetromino*.cpp`)
-* `GameState` (`include/core/GameState.hpp`, `src/core/GameState.cpp`)
+## 3. Core Gameplay Module – `tetris_core`
+
+### 3.1 Responsibilities
+
+`tetris_core` contains **all gameplay rules and state**:
+
+* Board representation and invariants.
+* Tetromino geometry, movement, and rotation.
+* Collision detection and line clearing.
+* Scoring and level progression.
+* Game lifecycle management (start, pause, game over).
+* Multiplayer **match rule strategies** (mode-dependent logic).
+
+This module is completely **independent of SDL, ImGui, and networking**.
+
+---
+
+### 3.2 Key Classes
+
+**State and rules**
+
+* `Board`
+  Owns the grid of locked blocks, validates placement, clears full lines, and detects game-over conditions.
+
+* `Tetromino` / `TetrominoFactory`
+  Encapsulate tetromino shapes, rotations, and creation logic.
+
+* `GameState`
+  Represents a full Tetris session for one board:
+
+  * board + active and next pieces,
+  * scoring and level managers,
+  * gameplay legality (movement, rotation, locking, clearing),
+  * lifecycle state (`NotStarted`, `Running`, `Paused`, `GameOver`).
+
+  `GameState` is an **active domain object**: it encapsulates both state and core gameplay rules.
+  It does **not** manage time; that responsibility belongs to the controller layer.
+
 * `ScoreManager`, `LevelManager`
-* **Match rules strategy**
-
-  * `IMatchRules` (`include/core/IMatchRules.hpp`)
-  * `TimeAttackRules` (`src/core/TimeAttackRules.cpp`)
-  * `SharedTurnRules` (`src/core/SharedTurnRules.cpp`) — current behavior: *turn-based by pieces/turn*
-* **Controller**
-
-  * `GameController` (`include/controller/GameController.hpp`, `src/controller/GameController.cpp`)
-  * `InputAction` (`include/controller/InputAction.hpp`)
-
-**Core invariants**
-
-* `tetris_core` has **no dependency** on SDL/ImGui or networking.
-* The core remains the single source of truth for gameplay legality: UI never “teleports pieces”.
+  Encapsulate scoring rules and gravity/level progression independently from the board logic.
 
 ---
 
-### 2.2 Networking – `tetris_net`
+### 3.3 Multiplayer Match Rules (Strategy)
 
-**Location**
+Multiplayer-specific policies are implemented using the **Strategy pattern**.
 
-* Headers: `include/network/*`
-* Sources: `src/network/*`
+**Interface**
 
-**Responsibilities**
+* `IMatchRules` (defined in `MatchRules.hpp`)
 
-* Provide multiplayer over TCP using a **host authoritative** model:
+  This interface defines match-level rules that are **independent of per-cell gameplay mechanics**, such as:
 
-  * Clients send `InputActionMessage`.
-  * Host applies actions to authoritative game state(s).
-  * Host broadcasts `StateUpdate` snapshots periodically (20 Hz).
-  * Host broadcasts `MatchResult` when game ends.
-* Provide protocol definitions + serialization.
-* Provide mapping between core state and “wire DTOs”.
+  * when a match starts and ends,
+  * how a winner is determined,
+  * whose turn it is (for turn-based modes).
 
-**Key classes/files**
+  Importantly, rules operate on **lightweight `PlayerSnapshot` DTOs**, not on full `GameState` objects.
+  This avoids coupling match logic to board internals.
 
-* Session abstraction:
+**Implementations**
 
-  * `INetworkSession` (`include/network/INetworkSession.hpp`)
-* TCP transport:
+* `TimeAttackRules`
 
-  * `TcpServer` (`src/network/TcpServer.cpp`) — accepts sessions
-  * `TcpSession` (`src/network/TcpSession.cpp`) — client and server session, line-based message IO
-* Host side orchestration:
+  * Independent boards per player.
+  * Match ends after a time limit or when players die.
+  * Winner determined by survival and/or score.
 
-  * `NetworkHost` (`include/network/NetworkHost.hpp`, `src/network/NetworkHost.cpp`)
-  * (optional/auxiliary depending on your codebase) `HostGameSession`, `HostLoop`
-* Client side:
+* `SharedTurnRules`
 
-  * `NetworkClient` (`include/network/NetworkClient.hpp`, `src/network/NetworkClient.cpp`)
-* Protocol + serialization:
+  * One shared board.
+  * Control alternates between players based on a fixed number of locked pieces per turn.
+  * Match ends when only one (or zero) players remain alive.
 
-  * `MessageTypes` (`include/network/MessageTypes.hpp`)
-  * `Serialization` (`src/network/Serialization.cpp`)
-  * `StateUpdateMapper` (`src/network/StateUpdateMapper.cpp`) — maps `core::GameState/Board` to `BoardDTO/PlayerStateDTO`
-
-**Transport**
-
-* TCP sockets (links `ws2_32` on Windows).
-* Messages are serialized to **single-line UTF-8** (no trailing newline inside message), sent as lines.
+This design allows adding new multiplayer modes without modifying the UI or networking layers.
 
 ---
 
-### 2.3 GUI (SDL2 + ImGui) – `tetris_gui_sdl`
+## 4. Controller Layer – `controller/`
 
-**Location**
+### 4.1 Responsibilities
 
-* Headers: `include/gui_sdl/*`
-* Sources: `src/gui_sdl/*`
+The controller layer coordinates **time-based progression** and **player actions**:
 
-**Responsibilities**
-
-* Provide game navigation and rendering via SDL2 + ImGui.
-* Implement the full multiplayer flow:
-
-  * Config selection (host/join, address/port, mode params).
-  * Lobby (host waits, client joins).
-  * Multiplayer game screen renders boards + scoreboards + timer/turn HUD.
-* Translate keyboard input into `InputAction`:
-
-  * Host applies locally to core controller.
-  * Client sends to host through `NetworkClient`.
-* Client is *render-only* for physics:
-
-  * it renders snapshots (`StateUpdate`) and displays results from host.
-
-**Key screens**
-
-* `StartScreen` — entry menu
-* `MultiplayerConfigScreen` — host/join + parameters UI
-* `LobbyScreen` — connection status and match start
-* `MultiplayerGameScreen` — gameplay rendering:
-
-  * TimeAttack: two boards (host and opponent)
-  * SharedTurns: shared board + turn HUD (pieces left + whose turn)
-  * Match overlay: winner/loser/draw, rematch agreement, disconnect warnings (“Host disconnected” / “Opponent disconnected”)
-
-**UI constraints**
-
-* GUI should never re-implement rules; it only:
-
-  * sends `InputAction` or applies via `GameController`
-  * renders either local `GameState` (host/offline) or `StateUpdate` (client)
+* Converts discrete input events into gameplay actions.
+* Applies gravity at intervals determined by the current level.
+* Delegates all legality checks to `GameState`.
 
 ---
 
-### 2.4 Console Executable – `tetris_console` (debug/legacy)
+### 4.2 Key Classes
 
-**Location**
+* `InputAction`
+  Enumerates player intentions (MoveLeft, Rotate, SoftDrop, HardDrop, Pause, etc.).
+  It is UI- and network-agnostic.
 
-* `src/main_console.cpp`
+* `GameController`
+  Owns the **time accumulator** and applies:
 
-**Responsibilities**
+  * gravity ticks,
+  * discrete input actions.
 
-* Minimal runner useful for debugging `tetris_core` without GUI.
-
----
-
-## 3. Main Execution Flows
-
-### 3.1 Single-player (SDL GUI)
-
-1. `StartScreen` → user selects Single Player
-2. Screen owns a `GameState` + `GameController`
-3. Update loop calls `GameController::update(dt)`
-4. Keyboard events map to `InputAction` → `GameController::handleAction`
-5. Rendering draws board + active piece
-
-*(Your current focus is multiplayer, but this flow remains the conceptual baseline.)*
+  The controller **does not own** the `GameState`; it operates on a reference provided by the caller.
+  This makes the gameplay loop easy to test and reuse in different contexts.
 
 ---
 
-### 3.2 Multiplayer – Host-authoritative model
+## 5. Networking Module – `tetris_net`
 
-#### Host flow
+### 5.1 Responsibilities
 
-1. User selects Multiplayer → Host in `MultiplayerConfigScreen`
-2. `LobbyScreen`:
+The networking module provides **online multiplayer support** using a **host-authoritative model**:
 
-   * starts `TcpServer`
-   * creates `NetworkHost`
-   * accepts clients via `host_->addClient(session)`
-3. When host clicks **Start Match**:
+* Clients send input actions.
+* The host simulates the authoritative game state(s).
+* The host broadcasts periodic state snapshots.
+* The host determines match results and lifecycle events.
 
-   * host sends `StartGame` to all clients (`NetworkHost::startMatch()`)
-   * host enters `MultiplayerGameScreen`
-4. During gameplay:
-
-   * host runs core simulation via `GameController::update(dt)`
-   * host consumes client inputs (`host_->consumeInputQueue()`)
-   * host applies them to the correct state:
-
-     * TimeAttack: inputs control the opponent’s game
-     * SharedTurns: host accepts inputs only from current `turnPlayerId`
-   * host broadcasts snapshots (`StateUpdate`) at fixed rate (20 Hz)
-5. End-of-match:
-
-   * host decides outcome (time limit, deaths, scores)
-   * host broadcasts `MatchResult`
-   * host UI displays overlay + rematch logic
-
-#### Client flow
-
-1. User selects Multiplayer → Join in `MultiplayerConfigScreen`
-2. `LobbyScreen`:
-
-   * connects via `TcpSession::createClient`
-   * creates `NetworkClient(session, name)`
-   * sends `JoinRequest`
-   * waits for `StartGame`
-3. When `StartGame` received:
-
-   * client enters `MultiplayerGameScreen`
-4. During gameplay:
-
-   * client **does not run physics**
-   * keyboard actions → `NetworkClient::sendInput()`
-   * rendering uses last received `StateUpdate`
-5. End-of-match:
-
-   * client receives `MatchResult`
-   * overlay shows result + rematch request logic
-6. Disconnect handling:
-
-   * if no snapshots for a timeout → client shows “Host disconnected” overlay with button to return to menu
+All protocol, transport, and serialization logic is isolated in this module.
 
 ---
 
-## 4. Multiplayer Modes
+### 5.2 Transport and Sessions
 
-### 4.1 TimeAttack
+* `INetworkSession`
+  Abstract duplex message channel used by both host and client logic.
 
-* Two independent boards:
+* `TcpSession`
+  Concrete TCP implementation:
 
-  * Host board (player 1)
-  * Opponent board (player 2)
-* End conditions:
+  * runs a background thread,
+  * reads line-based messages,
+  * deserializes messages and dispatches them via callbacks.
 
-  * time limit reached, or
-  * one/both players reach `GameOver`
-* Winner:
-
-  * if exactly one died → other wins
-  * else compare scores → win/lose/draw
-
-### 4.2 SharedTurns (turn-based by pieces)
-
-* One shared board (host authoritative).
-* Only the player whose `turnPlayerId` matches may act.
-* Turns switch when the current player has placed `piecesPerTurn` pieces.
-* UI shows:
-
-  * current turn player
-  * pieces left in turn
+* `TcpServer`
+  Accepts incoming TCP connections and creates `TcpSession` instances.
 
 ---
 
-## 5. Evolutivity Points (Extension Hooks)
+### 5.3 Host-Side Orchestration
 
-* **Match rules strategy** (`IMatchRules`) allows adding new modes without modifying UI/network heavily.
-* **Front-end replacement**: SDL/ImGui is one frontend; others can be added with minimal changes to core/net.
-* **Protocol extension**: message definitions + serialization are isolated in `tetris_net`.
-* **Snapshot DTO mapping** is isolated (`StateUpdateMapper`), allowing protocol changes (delta compression, richer state).
+Host-side multiplayer logic is explicitly split into three cooperating components:
+
+* `NetworkHost`
+  Manages connected clients, player identities, protocol handling, and input queues.
+  It is responsible for:
+
+  * join handshake,
+  * input collection,
+  * disconnect detection,
+  * broadcasting messages.
+
+* `HostGameSession`
+  Coordinates the **match rules** (`IMatchRules`) with the networking layer:
+
+  * initializes players,
+  * starts the match,
+  * forwards piece-lock events to rules,
+  * evaluates match completion and results.
+
+* `HostLoop`
+  Acts as the **simulation glue**:
+
+  * consumes client input messages,
+  * dispatches actions to `GameController` instances,
+  * advances gravity,
+  * detects newly locked pieces,
+  * periodically builds and broadcasts `StateUpdate` snapshots.
+
+This separation keeps networking, rules, and simulation concerns loosely coupled.
 
 ---
 
-## 6. Design Patterns Used
+### 5.4 Protocol and Serialization
 
-* **Factory**: `TetrominoFactory`
-* **Strategy**: `IMatchRules` → `TimeAttackRules`, `SharedTurnRules`
-* **MVC-inspired separation**:
+* `MessageTypes`
+  Defines all protocol messages (JoinRequest, StartGame, InputActionMessage, StateUpdate, MatchResult, etc.).
+
+* `Serialization`
+  Converts messages to/from **single-line UTF-8 text**.
+  Each message is framed as one line to ensure reliable TCP parsing.
+
+* `StateUpdateMapper`
+  Converts `core::GameState` into DTO snapshots (`PlayerStateDTO`, `BoardDTO`) for network transmission.
+
+The core engine never serializes itself; all mapping is done externally.
+
+---
+
+## 6. GUI Module – `tetris_gui_sdl`
+
+### 6.1 Responsibilities
+
+The SDL2 + ImGui GUI module:
+
+* Provides all user interaction and rendering.
+* Implements navigation between screens.
+* Translates keyboard input into `InputAction`.
+* Displays authoritative state (local or remote).
+
+The GUI **never reimplements game rules**.
+
+---
+
+### 6.2 Screen Architecture
+
+* `Application`
+  Owns the SDL window, renderer, and ImGui context.
+  Runs the main loop and manages screen transitions.
+
+* `Screen`
+  Abstract base class for UI states.
+
+Concrete screens include:
+
+* `StartScreen`
+* `SinglePlayerScreen`
+* `MultiplayerConfigScreen`
+* `LobbyScreen`
+* `MultiplayerGameScreen`
+
+---
+
+### 6.3 Multiplayer Rendering Model
+
+* **Host**
+
+  * Runs local simulation via `GameController`.
+  * Applies remote inputs.
+  * Broadcasts snapshots.
+
+* **Client**
+
+  * Does not simulate gameplay.
+  * Sends input actions to host.
+  * Renders the latest received `StateUpdate`.
+
+This model favors **consistency and fairness** over client-side prediction.
+
+---
+
+## 7. Execution Flows (Summary)
+
+### Single Player
+
+```
+Input → GameController → GameState → Render
+```
+
+### Multiplayer (Host)
+
+```
+Client Inputs → NetworkHost → HostLoop
+             → GameController(s) → GameState(s)
+             → StateUpdateMapper → Broadcast
+```
+
+### Multiplayer (Client)
+
+```
+Input → NetworkClient → Host
+StateUpdate → Render only
+```
+
+---
+
+## 8. Evolutivity Points
+
+* **New multiplayer modes**: add new `IMatchRules` implementations.
+* **New front-ends**: reuse core and networking with a different UI.
+* **Protocol evolution**: extend message types or snapshots without touching core logic.
+
+---
+
+## 9. Design Patterns Used
+
+* **Strategy**: multiplayer match rules (`IMatchRules`)
+* **Factory**: tetromino creation (`TetrominoFactory`)
+* **MVC-inspired layering**:
 
   * Model: `GameState`, `Board`, `Tetromino`
   * Controller: `GameController`
-  * View: SDL/ImGui screens (`Screen` subclasses)
-* **RAII & Modern C++**: `std::unique_ptr`, `std::shared_ptr`, standard containers
-* **Host-authoritative networking** (common multiplayer architecture)
+  * View: SDL/ImGui screens
+* **RAII & Modern C++**:
 
----
-
-## 7. Build Targets
-
-CMake targets:
-
-* `tetris_core` (library)
-* `tetris_net` (library)
-* `tetris_console` (executable)
-* `tetris_gui_sdl` (executable)
-
-Dependencies:
-
-* SDL2
-* Dear ImGui
-* WinSock (`ws2_32`) on Windows
+  * smart pointers,
+  * deterministic resource management,
+  * STL containers
+* **Host-authoritative networking**: standard multiplayer architecture pattern

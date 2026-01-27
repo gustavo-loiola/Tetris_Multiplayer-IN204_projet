@@ -20,7 +20,7 @@ namespace tetris::gui_sdl {
 class LobbyScreen final : public Screen {
 public:
     explicit LobbyScreen(const tetris::net::MultiplayerConfig& cfg);
-    ~LobbyScreen(); // ✅ add this
+    ~LobbyScreen();
 
     void handleEvent(Application& app, const SDL_Event& e) override;
     void update(Application& app, float dtSeconds) override;

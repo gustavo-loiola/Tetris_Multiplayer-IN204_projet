@@ -18,6 +18,12 @@ class NetworkHost {
 public:
     explicit NetworkHost(const MultiplayerConfig& config);
 
+    struct LobbyPlayer {
+        PlayerId id;
+        std::string name;
+        bool connected;
+    };
+
     void addClient(INetworkSessionPtr session);
 
     /// Poll sessions; detects disconnects and broadcasts PlayerLeft.
@@ -26,6 +32,7 @@ public:
     std::vector<InputActionMessage> consumeInputQueue();
 
     std::size_t playerCount() const { return m_players.size(); }
+    std::vector<LobbyPlayer> getLobbyPlayers() const;
 
     // Rematch handshake:
     // - each client can send RematchDecision{true/false}

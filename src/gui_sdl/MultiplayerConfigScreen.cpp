@@ -20,6 +20,9 @@ MultiplayerConfigScreen::MultiplayerConfigScreen()
 
     std::strncpy(hostAddressBuf_, cfg_.hostAddress.c_str(), sizeof(hostAddressBuf_) - 1);
     hostAddressBuf_[sizeof(hostAddressBuf_) - 1] = '\0';
+    
+    std::strncpy(playerNameBuf_, cfg_.playerName.c_str(), sizeof(playerNameBuf_) - 1);
+    playerNameBuf_[sizeof(playerNameBuf_) - 1] = '\0';
 }
 
 void MultiplayerConfigScreen::handleEvent(Application&, const SDL_Event&) {
@@ -49,6 +52,11 @@ void MultiplayerConfigScreen::render(Application& app)
     ImGui::Separator();
 
     // Host/Join
+    ImGui::TextUnformatted("Player:");
+    ImGui::InputText("Name", playerNameBuf_, IM_ARRAYSIZE(playerNameBuf_));
+
+    ImGui::Spacing();
+
     ImGui::TextUnformatted("Role:");
     ImGui::RadioButton("Host", &roleIndex_, 0); ImGui::SameLine();
     ImGui::RadioButton("Join", &roleIndex_, 1);
@@ -99,6 +107,7 @@ void MultiplayerConfigScreen::render(Application& app)
 
     if (ImGui::Button("Continue", ImVec2(160, 0))) {
         // Build config from UI fields
+        cfg_.playerName = playerNameBuf_;
         cfg_.isHost = (roleIndex_ == 0);
         cfg_.hostAddress = hostAddressBuf_;
         cfg_.port = static_cast<std::uint16_t>(port_);
@@ -119,7 +128,11 @@ void MultiplayerConfigScreen::render(Application& app)
             // Keep cfg_.mode/timeLimitSeconds/piecesPerTurn as-is (or set to safe defaults)
         }
 
-        app.setScreen(std::make_unique<LobbyScreen>(cfg_));
+        if (cfg_.playerName.empty()) {
+            ImGui::TextColored(ImVec4(1,0,0,1), "Please enter a player name.");
+        } else {
+            app.setScreen(std::make_unique<LobbyScreen>(cfg_));
+        }
         ImGui::End();
         return;
     }

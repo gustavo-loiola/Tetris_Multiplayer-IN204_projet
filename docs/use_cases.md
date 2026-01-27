@@ -1,12 +1,12 @@
 # Use Cases – Multiplayer Tetris (IN204)
 
-This document describes the main use cases for the system in single-player and multiplayer contexts, aligned with the current implementation (SDL2 + ImGui GUI, TCP networking, authoritative host, snapshots, match results, rematch, disconnect handling).
+This document describes the main use cases for the system in single-player and multiplayer contexts, aligned with the current implementation (**SDL2 + ImGui GUI**, **TCP networking**, **authoritative host**, **snapshots**, **match results**, **rematch**, **disconnect handling**, **keep-alive**).
 
 ## Actors
 
 * **Player**: human user interacting with the game UI.
-* **Host Player**: player who hosts a multiplayer match.
-* **Client Player**: player who joins a hosted match.
+* **Host Player**: player who hosts a multiplayer match (authoritative).
+* **Client Player**: player who joins a hosted match (remote).
 * **System**: application and its subsystems (core/controller/network/UI).
 
 ---
@@ -18,12 +18,13 @@ This document describes the main use cases for the system in single-player and m
 
 **Preconditions**
 
-* Application is installed/built.
+* Application is built and runnable.
 
 **Main Flow**
 
 1. Player launches the application.
-2. System displays the **Start Screen** (`StartScreen`) with options (Single Player / Multiplayer).
+2. System initializes SDL and ImGui (`Application`).
+3. System displays the **Start Screen** (`StartScreen`) with options (Single Player / Multiplayer).
 
 **Postconditions**
 
@@ -43,16 +44,17 @@ This document describes the main use cases for the system in single-player and m
 **Main Flow**
 
 1. Player selects **Single Player**.
-2. System opens the gameplay screen.
-3. System spawns tetrominoes and applies gravity.
-4. Player moves/rotates/drops pieces via keyboard input.
-5. System clears completed lines and updates score/level.
-6. The game ends when spawning becomes impossible (game over).
-7. Player may return to the menu.
+2. System opens the **SinglePlayerScreen**.
+3. System creates a local `GameState` and a `GameController`.
+4. System spawns tetrominoes and applies gravity through the controller update loop.
+5. Player moves/rotates/drops pieces via keyboard input mapped to `InputAction`.
+6. System clears completed lines and updates score/level.
+7. The game ends when spawning becomes impossible (game over).
+8. Player may return to the start menu.
 
 **Alternative Flows**
 
-* A1: Player pauses and resumes the game.
+* A1: Player pauses and resumes the game (`PauseResume`).
 
 **Postconditions**
 
@@ -60,113 +62,130 @@ This document describes the main use cases for the system in single-player and m
 
 ---
 
-## UC-03 – Host Multiplayer Match (Lobby)
+## UC-03 – Configure Multiplayer Match Parameters
+
+**Primary Actor**: Player
+**Goal**: Choose the multiplayer role and parameters before connecting.
+
+**Preconditions**
+
+* Player is in the start menu.
+
+**Main Flow**
+
+1. Player selects **Multiplayer**.
+2. System displays **MultiplayerConfigScreen**.
+3. Player selects role:
+
+   * Host, or
+   * Join
+4. Player enters:
+
+   * player name
+   * host address (Join only)
+   * port
+5. Player selects match mode:
+
+   * Time Attack (time limit), or
+   * Shared Turns (pieces per turn)
+6. Player confirms configuration.
+
+**Postconditions**
+
+* System transitions to `LobbyScreen` with the selected configuration.
+
+---
+
+## UC-04 – Host Multiplayer Match (Lobby)
 
 **Primary Actor**: Host Player
 **Goal**: Create a multiplayer match configuration and wait for a client to join.
 
 **Preconditions**
 
-* Host Player is in start menu.
+* Host Player has configured multiplayer as Host.
 * Network is available.
 
 **Main Flow**
 
-1. Host Player selects **Multiplayer**.
-2. System displays the multiplayer configuration screen.
-3. Host Player configures:
-
-   * Host mode (port)
-   * Match mode (Time Attack / Shared Turns)
-   * Mode parameters (**time limit** or **pieces per turn**)
-4. Host confirms.
-5. System starts listening (`TcpServer`) and opens the **Lobby Screen** (`LobbyScreen`).
-6. When a client connects:
+1. Host Player enters the **Lobby Screen** (`LobbyScreen`).
+2. System starts listening on a TCP port (`TcpServer`).
+3. System creates `NetworkHost`.
+4. When a client connects:
 
    1. Client sends `JoinRequest(playerName)`.
-   2. Host replies with `JoinAccept(assignedId, welcomeMessage)`.
-   3. Lobby displays updated connection/player count.
-7. Host Player presses **Start Match**.
-8. System sends `StartGame(mode, params, startTick)` to all clients.
-9. System transitions host to `MultiplayerGameScreen` immediately.
+   2. Host assigns `PlayerId` and replies with `JoinAccept(assignedId, welcomeMessage)`.
+   3. Lobby displays updated connection/player status.
+5. Host may wait for the client or proceed.
 
 **Postconditions**
 
-* Match begins with host-selected parameters.
+* At least one client is connected and has been assigned a `PlayerId`.
+
+**Alternative Flows**
+
+* A1: Client disconnects before match start → lobby updates and host can continue waiting.
 
 ---
 
-## UC-04 – Join Multiplayer Match (Lobby)
+## UC-05 – Join Multiplayer Match (Lobby)
 
 **Primary Actor**: Client Player
 **Goal**: Join an existing multiplayer lobby and wait for the host to start.
 
 **Preconditions**
 
-* Client Player is in start menu.
+* Client Player has configured multiplayer as Join.
 * Knows host address and port.
 * Network is available.
 
 **Main Flow**
 
-1. Client Player selects **Multiplayer**.
-2. System displays multiplayer configuration screen.
-3. Client Player chooses Join mode and enters:
-
-   * host IP/hostname
-   * port
-   * player name
-4. Client confirms.
-5. System connects to host (`TcpSession` + `NetworkClient`).
-6. Client sends `JoinRequest(playerName)`.
-7. Host replies with `JoinAccept(assignedId, welcomeMessage)`.
-8. System displays the **Lobby Screen**.
-9. Client waits for `StartGame` from host.
-10. On receiving `StartGame`, the client:
-
-    1. Updates its local config with host parameters (mode/time limit/pieces per turn).
-    2. Transitions to `MultiplayerGameScreen`.
+1. Client enters the **Lobby Screen**.
+2. System connects to the host (`TcpSession::createClient`).
+3. System creates `NetworkClient(session, playerName)`.
+4. Client sends `JoinRequest(playerName)`.
+5. Host replies with `JoinAccept(assignedId, welcomeMessage)`.
+6. Client displays lobby status and waits for match start.
+7. Host periodically sends `KeepAlive` messages while waiting (liveness support).
+8. Client remains connected and responsive in the lobby.
 
 **Postconditions**
 
-* Client enters gameplay using host-selected parameters.
+* Client is connected and waiting for `StartGame`.
 
 **Alternative Flows**
 
-* A1: Host unreachable → show “Not connected” in lobby/config and allow back to menu.
-* A2: Disconnect before start → lobby remains, user can return to menu.
+* A1: Host unreachable → UI indicates failure and offers return to menu.
+* A2: Disconnect before start → UI indicates disconnect and offers return to menu.
 
 ---
 
-## UC-05 – Start Multiplayer Match (Host Authority)
+## UC-06 – Start Multiplayer Match (Host Authority)
 
 **Primary Actor**: Host Player
-**Goal**: Start the match for everyone (host is the only one allowed).
+**Goal**: Start the match for all connected players (host is the only one allowed).
 
 **Preconditions**
 
 * Host is in lobby.
-* At least one client is connected.
+* At least one client is connected and joined.
 
 **Main Flow**
 
-1. Host presses **Start Match**.
-2. System sends `StartGame` to clients.
-3. Host enters gameplay; clients enter when they receive `StartGame`.
-4. During gameplay:
-
-   * Client sends `InputActionMessage`.
-   * Host applies inputs to authoritative state(s).
-   * Host broadcasts `StateUpdate` snapshots at a fixed rate.
-5. Clients render using the received snapshots only (no client-side physics).
+1. Host clicks **Start Match**.
+2. System sends `StartGame(mode, timeLimitSeconds, piecesPerTurn, startTick)` to all clients.
+3. Host transitions to `MultiplayerGameScreen` immediately.
+4. Clients transition to `MultiplayerGameScreen` when receiving `StartGame`.
+5. Gameplay begins under host authority.
 
 **Postconditions**
 
-* A synchronized multiplayer match is running (authoritative host loop).
+* A synchronized multiplayer match is running.
 
 ---
 
-## UC-06 – Play Multiplayer Match (Time Attack)
+## UC-07 – Play Multiplayer Match (Time Attack)
 
 **Primary Actor**: Host Player, Client Player
 **Goal**: Compete for the highest score under a time limit.
@@ -174,34 +193,36 @@ This document describes the main use cases for the system in single-player and m
 **Preconditions**
 
 * Match mode is **Time Attack**.
+* `StartGame.timeLimitSeconds > 0`.
 
 **Main Flow**
 
-1. Host runs two authoritative game states:
+1. Host runs authoritative simulation for:
 
-   * host local board
-   * opponent board (controlled by client inputs)
-2. Client sends actions; host applies to opponent board.
-3. Host sends `StateUpdate` containing both players’ DTOs (boards + scores + levels + alive flags) plus **time remaining**.
-4. UI shows:
+   * host board (local input),
+   * client board (remote inputs).
+2. Client sends `InputActionMessage(playerId, clientTick, action)` to the host.
+3. Host applies client actions to the client’s authoritative `GameState` via `GameController`.
+4. Host periodically broadcasts `StateUpdate` including:
 
-   * two boards
-   * scoreboard for both players
-   * timer with time remaining
-5. Match ends when:
+   * `serverTick`,
+   * `players[]` boards + score + level + alive,
+   * `timeLeftMs` (host authoritative).
+5. Client renders using the most recent `StateUpdate` snapshot (no client physics).
+6. Match ends when:
 
    * time runs out, or
    * one/both players reach game over.
-6. Host computes winner and sends `MatchResult` to client.
-7. Both host and client show a match result overlay.
+7. Host computes outcome and sends `MatchResult` to client.
+8. Both sides display a match overlay with results.
 
 **Postconditions**
 
-* Match result is visible to all participants.
+* Match results are displayed to all participants.
 
 ---
 
-## UC-07 – Play Multiplayer Match (Shared Turns)
+## UC-08 – Play Multiplayer Match (Shared Turns)
 
 **Primary Actor**: Host Player, Client Player
 **Goal**: Play on a single shared board where control alternates by **pieces per turn**.
@@ -209,58 +230,68 @@ This document describes the main use cases for the system in single-player and m
 **Preconditions**
 
 * Match mode is **Shared Turns**.
+* `StartGame.piecesPerTurn >= 1`.
 
 **Main Flow**
 
-1. Host runs one authoritative shared game state (`sharedGame_`).
-2. Host selects the current turn owner (`turnPlayerId`) and initializes `piecesLeftThisTurn`.
-3. Both players send input actions, but host applies only:
+1. Host runs one authoritative shared `GameState`.
+2. Host maintains current turn owner and piece counter (rule-based).
+3. Both players may send input actions, but host applies only actions from:
 
-   * actions from the current turn owner, and
-   * host local actions only when it is host’s turn.
-4. After the configured number of pieces are committed/consumed, host switches turn owner.
+   * the current turn owner, and
+   * host local input when host is the current player.
+4. When a piece locks:
+
+   * host detects it (based on `GameState::lockedPieces()` changes),
+   * host informs match rules (`onPieceLocked`),
+   * rules may switch turn owner.
 5. Host broadcasts `StateUpdate` including:
 
-   * shared board DTO
-   * scoreboard info
-   * current `turnPlayerId` and `piecesLeftThisTurn`
-6. Client renders the shared board and turn HUD from snapshots.
+   * shared board DTO (in `players[]`),
+   * turn HUD fields: `turnPlayerId`, `piecesLeftThisTurn`.
+6. Client renders shared board + turn HUD from snapshots.
+7. Match ends when rules determine completion (e.g., survival condition).
+8. Host sends `MatchResult` to client.
+9. Both display match overlay.
 
 **Postconditions**
 
-* Shared board match finishes and results are shared.
+* Shared board match finishes and results are visible.
 
 ---
 
-## UC-08 – Match End Overlay + Rematch Agreement
+## UC-09 – Match End Overlay + Rematch Agreement
 
 **Primary Actor**: Host Player, Client Player
 **Goal**: Offer clear end-of-match UX and allow a rematch only if both agree.
 
 **Preconditions**
 
-* A multiplayer match has ended (Time Attack or Shared Turns).
+* A multiplayer match has ended and `MatchResult` has been delivered.
 
 **Main Flow**
 
-1. System displays a **Match Result** overlay on both screens.
+1. System displays a **Match Result** overlay on both host and client.
 2. Overlay shows:
 
-   * outcome (Win/Lose/Draw)
-   * final score
-   * extra info (e.g., time limit for TimeAttack)
-3. If both players choose **Rematch**:
+   * outcome (Win/Lose/Draw),
+   * final score,
+   * mode-relevant context (e.g., time limit).
+3. Each player chooses:
 
-   * Client requests rematch (current implementation: re-sends `JoinRequest` as a “ready” signal).
-   * Host detects readiness and, if opponent is still connected, restarts the match:
+   * **Rematch**, or
+   * **Back to Menu**.
+4. If a player chooses rematch, the system sends `RematchDecision{wantsRematch=true}`.
+5. If a player declines, the system sends `RematchDecision{wantsRematch=false}`.
+6. Host restarts a match only when **all connected players** want rematch:
 
-     1. resets authoritative core state(s)
-     2. broadcasts a new `StartGame`
-4. Both screens resume gameplay.
+   1. host resets authoritative state(s),
+   2. host sends a new `StartGame`.
+7. Both sides resume gameplay.
 
 **Alternative Flows**
 
-* A1: One player returns to menu → rematch becomes impossible; host informs opponent is gone.
+* A1: One player returns to menu → rematch becomes impossible.
 * A2: Opponent disconnected → overlay indicates rematch unavailable.
 
 **Postconditions**
@@ -269,38 +300,39 @@ This document describes the main use cases for the system in single-player and m
 
 ---
 
-## UC-09 – Handle Disconnect During Multiplayer (Lobby or Match)
+## UC-10 – Handle Disconnect During Multiplayer (Lobby or Match)
 
 **Primary Actor**: Host Player, Client Player
-**Goal**: Keep system stable and inform users clearly when the network breaks.
+**Goal**: Keep the system stable and inform users clearly when the network breaks.
 
 **Preconditions**
 
 * Multiplayer lobby or match is active.
 
-### UC-09A – Host disconnects (client-side detection)
+### UC-10A – Host disconnects (client-side detection)
 
 **Main Flow**
 
-1. Host closes the game / returns to menu / connection drops.
-2. Client stops receiving `StateUpdate`.
-3. Client detects a snapshot timeout.
-4. Client displays a **HOST DISCONNECTED** overlay with a button.
+1. Host closes the game or connection drops.
+2. Client stops receiving messages (`StateUpdate` and/or `KeepAlive`).
+3. Client detects loss of liveness (timeout via `timeSinceLastHeard()`).
+4. Client displays **HOST DISCONNECTED** overlay and disables gameplay.
 5. Client can return to Start menu.
 
 **Postconditions**
 
-* Client does not freeze; user gets an explicit recovery action.
+* Client remains responsive and can recover to menu.
 
-### UC-09B – Client disconnects (host-side detection)
+### UC-10B – Client disconnects (host-side detection)
 
 **Main Flow**
 
 1. Client disconnects or closes the game.
-2. Host detects disconnect via session state / poll.
-3. Host ends the match and shows a result overlay indicating opponent disconnected.
-4. Rematch is disabled.
+2. Host detects disconnect during `NetworkHost::poll()`.
+3. Host broadcasts `PlayerLeft(playerId, reason)` to remaining peers (if applicable).
+4. Host ends the match and shows an overlay: **Opponent disconnected**.
+5. Rematch is disabled for missing players.
 
 **Postconditions**
 
-* Host remains responsive; the state remains consistent.
+* Host remains responsive and state remains consistent.

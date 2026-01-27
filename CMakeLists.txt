@@ -72,46 +72,6 @@ target_include_directories(tetris_console
 )
 
 # =========================
-# GUI executable (wxWidgets + NanoSVG)
-# =========================
-option(BUILD_GUI "Build GUI executable" ON)
-
-if(BUILD_GUI)
-    # wxWidgets via vcpkg
-    find_package(wxWidgets CONFIG REQUIRED)
-    
-    # NanoSVG via vcpkg
-    find_package(NanoSVG CONFIG REQUIRED)
-
-    add_executable(tetris_gui WIN32
-        src/gui/TetrisApp.cpp
-        src/gui/TetrisFrame.cpp
-        src/gui/BoardPanel.cpp
-        src/gui/NextPiecePanel.cpp
-        src/gui/StartFrame.cpp
-        src/gui/MultiplayerConfigDialog.cpp
-        src/gui/RemoteBoardPanel.cpp
-        src/gui/MultiplayerFrame.cpp
-    )
-
-    target_include_directories(tetris_gui
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(tetris_gui
-        PRIVATE
-            tetris_core
-            tetris_net
-            wx::core
-            wx::base
-            NanoSVG::nanosvg
-            NanoSVG::nanosvgrast
-    )
-endif()
-
-
-# =========================
 # SDL2 + ImGui GUI executable
 # =========================
 option(BUILD_SDL_GUI "Build SDL2 + ImGui GUI executable" ON)

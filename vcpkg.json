@@ -2,7 +2,6 @@
   "name": "multiplayer-tetris",
   "version-string": "0.1.0",
   "dependencies": [
-    "wxwidgets",
     "sdl2",
     "nanosvg",
     {

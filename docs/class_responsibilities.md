@@ -18,18 +18,19 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Owns the grid (locked blocks).
+* Owns the grid of locked blocks (occupied cells).
 * Validates placement and collisions.
-* Clears lines and compacts the grid.
+* Locks tetromino blocks into the grid.
+* Clears full lines and compacts the grid.
 
 **Collaborates with**
 
-* `GameState` (reads/writes board cells, line clears).
+* `GameState` (reads/writes cells, line clears, game over conditions).
 * `Tetromino` (collision tests using block coordinates).
 
 **Why it exists**
 
-* Centralizes all grid invariants (no duplication of collision/clear logic).
+* Centralizes all grid invariants (bounds, collisions, line clearing), avoiding duplication across UI and controllers.
 
 ---
 
@@ -37,12 +38,15 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Represents a piece type (I/O/T/J/L/S/Z) and rotation state.
-* Provides absolute block coordinates for rendering and collision.
+* Represents a piece type (I/O/T/J/L/S/Z) with a rotation state and an origin.
+* Produces the absolute block coordinates used for:
+
+  * collision checks (core)
+  * rendering (UI)
 
 **Why it exists**
 
-* Encapsulates shape/rotation logic so the rest of the system stays simpler.
+* Encapsulates shape and rotation logic so board and controller remain simple.
 
 ---
 
@@ -50,7 +54,8 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Generates pieces (random selection; can be extended to “bag”/seeded RNG).
+* Generates new tetrominoes (random selection) for spawning.
+* Owns an RNG (`std::mt19937`) to allow future deterministic generation or testing improvements.
 
 **Pattern**
 
@@ -58,7 +63,7 @@ This document describes the main classes of the project, their responsibilities,
 
 **Why it exists**
 
-* Makes generation replaceable and testable (determinism for tests or replays).
+* Isolates piece generation policy from gameplay rules, improving testability and evolutivity.
 
 ---
 
@@ -66,17 +71,31 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Owns the complete game session state for one board:
+* Owns the complete state of one Tetris session:
 
-  * board + active piece + spawn/lock rules
-  * score/level integration
-  * status: Running / Paused / GameOver
-* Applies actions if valid (move/rotate/drop) and performs locking/clearing/scoring.
+  * `Board`
+  * active tetromino + next tetromino
+  * `ScoreManager` and `LevelManager`
+  * lifecycle (`NotStarted`, `Running`, `Paused`, `GameOver`)
+* Implements the **core gameplay rules and legality**:
+
+  * moves left/right
+  * rotations (CW/CCW)
+  * soft/hard drop
+  * locking the active piece
+  * line clearing and compaction
+  * scoring + level updates after line clears
+* Exposes a **discrete control API** to the controller layer.
 
 **Important note**
 
-* In multiplayer, the host holds the authoritative `GameState`(s).
-* The client **does not** simulate `GameState` during network play; it renders snapshots.
+* `GameState` is an **active domain object**: it encapsulates both state and core gameplay rules.
+* Time scheduling (gravity timing) is intentionally handled by `GameController`.
+
+**Multiplayer note**
+
+* The host is authoritative and holds the authoritative `GameState`(s).
+* The client does not simulate `GameState` during network play; it renders snapshots.
 
 ---
 
@@ -84,7 +103,14 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Encapsulates scoring policy (line clears, bonuses).
+* Encapsulates scoring policy:
+
+  * points for line clears depending on level
+  * small bonuses for soft/hard drop distance
+
+**Why it exists**
+
+* Keeps scoring rules isolated and replaceable without touching board movement logic.
 
 ---
 
@@ -92,19 +118,34 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Encapsulates level progression and gravity parameters.
+* Encapsulates level progression:
+
+  * total cleared line tracking
+  * level increments on thresholds
+* Provides gravity parameters via a gravity interval function.
+
+**Why it exists**
+
+* Separates difficulty progression from `GameState` mechanics.
 
 ---
 
-### 2.7 `IMatchRules`, `TimeAttackRules`, `SharedTurnRules`
+### 2.7 `IMatchRules`, `TimeAttackRules`, `SharedTurnRules` (Match Strategy)
 
 **Responsibility**
 
-* Define match-level policies that are *not* per-action mechanics:
+* Define match-level policies that are **not** local per-cell mechanics:
 
-  * when a match ends (time limit / game over)
-  * how to determine winner
-  * (SharedTurns) whose turn it is and how it advances
+  * match start synchronization (`onMatchStart`)
+  * match end conditions (time limit, survival, etc.)
+  * winner decision (win/lose/draw)
+  * (SharedTurns) current turn owner and turn switching rules
+
+**Interface design choice**
+
+* Rules operate on lightweight `PlayerSnapshot` DTOs (id, score, alive),
+  rather than depending directly on `GameState`.
+* This reduces coupling and keeps match logic independent from board internals.
 
 **Pattern**
 
@@ -112,12 +153,19 @@ This document describes the main classes of the project, their responsibilities,
 
 **Current implemented behavior**
 
-* **TimeAttack**: ends on time limit or death; winner by survival/score.
-* **SharedTurns**: one shared board; turn changes based on **pieces per turn**.
+* **TimeAttackRules**
+
+  * ends after a configured tick/time limit (or when deaths occur, depending on implementation)
+  * winner decided by survival and/or score comparison
+* **SharedTurnRules**
+
+  * one shared board
+  * turn changes after a fixed number of locked pieces (`piecesPerTurn`)
+  * exposes the current allowed player via `currentPlayer()` for host logic
 
 **Why it exists**
 
-* Allows adding new multiplayer modes without rewriting UI + networking.
+* Allows adding new multiplayer modes without rewriting the UI and networking layers.
 
 ---
 
@@ -127,12 +175,16 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Defines the “intent vocabulary” (MoveLeft/Right, RotateCW/CCW, SoftDrop, HardDrop, PauseResume…).
-* Acts as the common interface between UI, networking, and core.
+* Defines a small, explicit vocabulary of player intents:
+
+  * MoveLeft/MoveRight
+  * RotateCW/RotateCCW
+  * SoftDrop/HardDrop
+  * PauseResume
 
 **Why it exists**
 
-* Prevents SDL key codes or GUI details from leaking into gameplay logic.
+* Prevents SDL key codes, GUI events, or network representation from leaking into core gameplay logic.
 
 ---
 
@@ -140,43 +192,49 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Runs the time-based update loop:
+* Runs the **time-based update loop**:
 
-  * gravity timing
-  * locking/spawning triggers
-  * pause/resume
-* Applies `InputAction` on demand via `handleAction()`.
-* Updates the attached `GameState` via `update(dt)`.
+  * accumulates elapsed time
+  * triggers gravity ticks based on `GameState::gravityIntervalMs()`
+* Applies discrete player actions via `handleAction()`.
+* Delegates all legality/rules to `GameState`.
+
+**Ownership rule**
+
+* The controller does **not** own `GameState` (stores a reference); the caller manages lifetime.
 
 **Why it exists**
 
-* Keeps time mechanics out of `GameState`, improving testability and separation.
+* Keeps time scheduling and gravity mechanics separate from the gameplay rules, improving testability and reuse
+  (single-player, host simulation, AI-driven play).
 
 ---
 
 ## 4. Networking – `tetris_net`
 
-> The project uses an **authoritative host** model.
-> Clients send inputs; host simulates; clients render snapshots.
+> The project uses a **host-authoritative** model:
+> clients send inputs; host simulates; clients render snapshots.
 
-### 4.1 `MessageTypes`
+### 4.1 `MessageTypes` (`Message`, `MessageKind`, payload structs)
 
 **Responsibility**
 
 * Defines protocol vocabulary and payload structures.
-* Current key messages:
+* Current key messages include:
 
   * `JoinRequest`, `JoinAccept`
   * `StartGame`
   * `InputActionMessage`
-  * `StateUpdate` (snapshot DTO)
+  * `StateUpdate` (snapshot DTO including HUD fields)
   * `MatchResult`
-  * `Error`
-  * (Optional depending on your current branch) `PlayerLeft`
+  * `PlayerLeft`
+  * `RematchDecision`
+  * `KeepAlive`
+  * `ErrorMessage`
 
 **Why it exists**
 
-* Keeps all wire contracts explicit and shared by host/client code.
+* Keeps all wire contracts explicit, versionable, and shared by host/client.
 
 ---
 
@@ -184,13 +242,13 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Converts `Message` ↔ single-line text representation.
-* Handles escaping and parsing.
-* Ensures TCP stream framing is reliable (message boundaries).
+* Converts `Message` ↔ single-line UTF-8 representation.
+* Implements message framing (“one line = one message”) and parsing.
+* Returns parse failures as `std::nullopt` (caller decides how to handle malformed input).
 
 **Why it exists**
 
-* TCP is a stream; the project enforces a clear “one line = one message” framing.
+* TCP is a stream; this enforces reliable boundaries and isolates protocol encoding/decoding.
 
 ---
 
@@ -198,16 +256,15 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Abstract interface for a duplex message channel:
+* Abstract duplex channel used by host and client:
 
   * send `Message`
-  * poll for reads
-  * set message handler callback
-  * report connection state
+  * register a message handler callback
+  * query connection state
 
 **Why it exists**
 
-* Decouples higher-level host/client logic from socket implementation.
+* Decouples high-level multiplayer logic from the concrete socket implementation.
 
 ---
 
@@ -216,13 +273,17 @@ This document describes the main classes of the project, their responsibilities,
 **Responsibility**
 
 * Concrete TCP implementation of `INetworkSession`.
-* Reads from socket, assembles lines, calls message handler with deserialized `Message`.
-* Sends serialized messages.
-* Detects disconnections and reports `isConnected()`.
+* Runs a background read thread that:
+
+  * reads bytes from the socket
+  * splits into lines (`'\n'`)
+  * deserializes each line into a `Message`
+  * invokes the registered message handler
+* Sends serialized messages to the peer.
 
 **Why it exists**
 
-* Isolates OS-specific socket code and stream parsing.
+* Isolates OS-level socket code and stream parsing, keeping host/client logic clean.
 
 ---
 
@@ -232,7 +293,8 @@ This document describes the main classes of the project, their responsibilities,
 
 * Listens on a TCP port.
 * Accepts incoming connections.
-* Wraps accepted sockets as `TcpSession` and passes them to the host layer.
+* Creates `TcpSession` instances and exposes them via a callback.
+* Runs accept loop in a background thread.
 
 ---
 
@@ -240,24 +302,23 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Maintains connected clients (`PlayerInfo` with id/session/name).
-* Receives and queues client `InputActionMessage` (host consumes them during simulation).
-* Sends `JoinAccept` after a `JoinRequest`.
-* Sends `StartGame` to clients at match start (and at rematch restart).
-* Broadcasts:
+* Host-side networking endpoint:
 
-  * periodic `StateUpdate` snapshots
-  * `MatchResult`
-  * disconnect signals (if your protocol uses `PlayerLeft`)
+  * accepts sessions (`addClient`)
+  * manages lobby player info (id/name/connected)
+  * handles join handshake and assigns `PlayerId`
+  * collects incoming `InputActionMessage` into an input queue
+  * broadcasts protocol messages (`StartGame`, `StateUpdate`, `MatchResult`, etc.)
+* Detects disconnections and broadcasts `PlayerLeft`.
+* Implements rematch handshake:
 
-**Rematch role (as implemented)**
-
-* Tracks “rematch readiness” via a client resending `JoinRequest` after match end.
-* Exposes queries like `anyClientReadyForRematch()` and utilities like `clearRematchFlags()`.
+  * tracks `RematchDecision` from clients
+  * exposes readiness queries (`allConnectedClientsReadyForRematch`, etc.)
+* Sends `KeepAlive` periodically to preserve client liveness during non-gameplay phases.
 
 **Why it exists**
 
-* Centralizes server-side networking policy and connection bookkeeping.
+* Centralizes server-side connection bookkeeping and protocol handling (SRP).
 
 ---
 
@@ -265,17 +326,22 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Owns the client-side networking:
+* Client-side networking endpoint:
 
-  * sends `JoinRequest`
-  * sends `InputActionMessage`
-  * receives `StartGame`, `StateUpdate`, `MatchResult`, etc.
-* Stores “last received” messages for polling by the GUI.
-* Provides *consume* semantics (`consumeStateUpdate()`, etc.) so UI does not reuse stale messages.
+  * sends `JoinRequest` and input actions
+  * receives `StartGame`, `StateUpdate`, `MatchResult`, `PlayerLeft`, `Error`
+  * exposes “last received” and “consume once” APIs for the UI
+* Provides optional event handlers (callbacks) for StartGame / StateUpdate / MatchResult.
+* Tracks liveness (`timeSinceLastHeard`) to support UI disconnect detection.
+
+**Threading note**
+
+* Network callbacks may occur on a background thread (from `TcpSession`).
+* The client protects shared state with a mutex to allow safe polling/consumption from the UI thread.
 
 **Why it exists**
 
-* Isolates network IO from UI logic and ensures thread-safe access.
+* Isolates network IO and protocol details from the GUI, enabling clean and testable UI logic.
 
 ---
 
@@ -283,11 +349,59 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Converts internal core state to DTO snapshots:
+* Converts authoritative `core::GameState` into network DTOs:
 
-  * board → `BoardDTO` (cells, occupancy, colorIndex)
-  * player state → `PlayerStateDTO` (score/level/alive + board)
-* Allows extending snapshots with extra HUD fields (time left, turn data) without touching core logic.
+  * `PlayerStateDTO` including `BoardDTO`, score, level, alive state
+* Keeps mapping logic outside of core gameplay so the core stays network-agnostic.
+
+**Why it exists**
+
+* Implements a clean **DTO mapping boundary** between core and protocol.
+
+---
+
+### 4.9 `HostGameSession`
+
+**Responsibility**
+
+* High-level host orchestrator combining:
+
+  * `NetworkHost` (protocol + connections)
+  * `IMatchRules` (mode strategy)
+* Starts the match and initializes rule state.
+* Forwards piece-lock events to rules (`onPieceLocked`).
+* Calls rule update regularly and returns match results when finished.
+* Delegates `StateUpdate` broadcasting through `NetworkHost`.
+
+**Why it exists**
+
+* Separates “match policy” from both the low-level network protocol and the concrete simulation loop.
+
+---
+
+### 4.10 `HostLoop`
+
+**Responsibility**
+
+* Glue component that coordinates:
+
+  * `HostGameSession` (rules + networking)
+  * authoritative `GameState` instances
+  * `GameController` instances (gravity scheduling + action application)
+* On each step:
+
+  * consumes queued remote inputs and forwards them to the correct controller
+  * updates controllers with elapsed time
+  * detects newly locked pieces and notifies rules
+  * periodically builds and broadcasts `StateUpdate`
+
+**Ownership rule**
+
+* `HostLoop` does not own `GameState` or `GameController`; it operates on pointers provided by its caller.
+
+**Why it exists**
+
+* Makes the multiplayer host simulation loop explicit, testable, and independent of GUI.
 
 ---
 
@@ -297,12 +411,12 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Owns the SDL window and ImGui context.
+* Owns the SDL window/renderer and ImGui context.
 * Runs the main loop:
 
   * poll SDL events
-  * call current `Screen::handleEvent`, `Screen::update`, `Screen::render`
-* Provides screen transitions (`setScreen()`).
+  * call `Screen::handleEvent`, `Screen::update`, `Screen::render`
+* Manages screen transitions.
 
 ---
 
@@ -310,16 +424,15 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Abstract base for UI states.
-* Defines the interface:
+* Abstract base for UI states with:
 
-  * `handleEvent(app, event)`
-  * `update(app, dt)`
-  * `render(app)`
+  * event handling
+  * update
+  * render
 
 **Why it exists**
 
-* Implements a clean state machine for GUI navigation.
+* Implements a clean UI state machine (menu, lobby, gameplay, etc.).
 
 ---
 
@@ -327,27 +440,40 @@ This document describes the main classes of the project, their responsibilities,
 
 **Responsibility**
 
-* Main menu.
-* Lets the user choose single-player or multiplayer configuration.
+* Entry menu (single-player / multiplayer / exit).
+* Provides lightweight animated background to improve UX.
 
 ---
 
-### 5.4 `MultiplayerConfigScreen`
+### 5.4 `SinglePlayerScreen`
 
 **Responsibility**
 
-* Collects configuration:
+* Owns a local `GameState` + `GameController`.
+* Maps keyboard inputs into `InputAction`.
+* Renders:
 
-  * host vs join
-  * address/port
-  * game mode + parameters
-* Important UX rule implemented:
-
-  * **Client cannot override game parameters**; host settings are authoritative.
+  * board
+  * active piece
+  * next piece preview
+  * HUD (score/level/pause/game over)
 
 ---
 
-### 5.5 `LobbyScreen`
+### 5.5 `MultiplayerConfigScreen`
+
+**Responsibility**
+
+* Collects multiplayer configuration:
+
+  * role (host/join)
+  * address/port
+  * player name
+  * mode + parameters (time limit / pieces per turn)
+
+---
+
+### 5.6 `LobbyScreen`
 
 **Responsibility**
 
@@ -355,59 +481,56 @@ This document describes the main classes of the project, their responsibilities,
 
   * starts `TcpServer`
   * creates `NetworkHost`
-  * waits for at least one client
-  * “Start Match” sends `StartGame` and transitions to game screen
+  * accepts clients
+  * lets host start the match
 * Client side:
 
-  * creates `TcpSession` to host
+  * connects via `TcpSession::createClient`
   * creates `NetworkClient`
   * sends `JoinRequest`
   * waits for `StartGame`
-  * updates `cfg_` from `StartGame` before entering game
 
 ---
 
-### 5.6 `MultiplayerGameScreen`
+### 5.7 `MultiplayerGameScreen`
 
 **Responsibility**
 
-* Runs the match UI:
+* Runs the multiplayer match UI.
+* **Host path**:
 
-  * **Host**: simulates core state(s) + applies remote inputs + broadcasts snapshots.
-  * **Client**: sends inputs, renders authoritative snapshots.
-* Renders:
+  * simulates authoritative state(s) locally using `GameState` + `GameController`
+  * consumes remote inputs and applies them appropriately
+  * broadcasts `StateUpdate` snapshots periodically
+  * determines results (directly or via host-side match logic) and sends `MatchResult`
+* **Client path**:
 
-  * TimeAttack: two boards + two scoreboards + time-left HUD
-  * SharedTurns: one board + turn HUD (turn player, pieces left)
-* End-of-match:
+  * sends input actions to the host
+  * renders the latest `StateUpdate` snapshot (no client physics)
+* Implements match overlays:
 
-  * Host decides winner and broadcasts `MatchResult`.
-  * Both show match overlay with results and options.
-* Rematch:
-
-  * Host waits until both agree; restarts by sending new `StartGame`.
-  * Client requests rematch (re-JoinRequest) and waits for new `StartGame`.
-* Disconnect UX:
-
-  * Client detects snapshot timeout → “HOST DISCONNECTED” overlay with button.
-  * Host detects client disconnected → ends match and shows “Opponent disconnected”.
+  * win/lose/draw
+  * rematch flow
+  * disconnect handling
 
 **Why it exists**
 
-* Concentrates multiplayer UX logic while keeping core and network independent.
+* Concentrates multiplayer UX logic while keeping core gameplay and networking isolated and reusable.
 
 ---
 
 ## 6. Collaboration Summary
 
-* **Core (`tetris_core`)**: authoritative gameplay rules.
-* **Controller (`GameController`)**: timing + gravity + action application.
+* **Core (`tetris_core`)**: authoritative gameplay mechanics and state.
+* **Controller (`controller/`)**: gravity timing and discrete input application.
 * **Networking (`tetris_net`)**:
 
-  * clients send actions
-  * host simulates + broadcasts snapshots/results
+  * host collects inputs, simulates, broadcasts snapshots, decides results
+  * client sends inputs and renders snapshots
 * **GUI (`tetris_gui_sdl`)**:
 
-  * maps input to `InputAction`
+  * maps SDL input to `InputAction`
   * host applies locally; client sends to host
-  * rendering uses either local `GameState` (host/offline) or snapshots (client)
+  * renders either local state (single-player/host) or snapshots (client)
+
+---

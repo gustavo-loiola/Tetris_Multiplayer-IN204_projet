@@ -176,7 +176,7 @@ src/
   main_console.cpp
 
 docs/              # IN204 documentation (use cases, specs, architecture, UML)
-tests/             # Unit tests (if enabled)
+tests/             # Unit tests
 CMakeLists.txt
 ```
 

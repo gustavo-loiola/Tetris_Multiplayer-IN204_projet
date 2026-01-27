@@ -92,12 +92,3 @@ void GameController::resetTiming() {
 }
 
 } // namespace tetris::controller
-
-
-// This is exactly the logic your GUI will use later:
-
-// A timer fires every, say, 16ms (60 FPS).
-
-// It calls controller.update(16ms).
-
-// When enough time has accumulated to equal gravityIntervalMs(), the controller calls game_.tick() one or more times.

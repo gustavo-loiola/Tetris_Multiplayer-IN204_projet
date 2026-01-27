@@ -1,0 +1,17 @@
+# Multiplayer Tetris (C++17) - Build/Run Requirements
+# This is NOT a Python requirements file.
+# Dependencies are managed via vcpkg (see vcpkg.json).
+
+C++ compiler with C++17 support (MSVC / clang / gcc)
+CMake >= 3.16
+vcpkg (as submodule or installed separately)
+
+# Libraries (via vcpkg.json)
+SDL2
+Dear ImGui (sdl2-binding, sdl2-renderer-binding)
+NanoSVG
+
+# Platform-specific
+Windows: WinSock2 (ws2_32) - system library
+Linux: pthread (typically implicit), system SDL2 runtime deps
+macOS: system frameworks required by SDL2

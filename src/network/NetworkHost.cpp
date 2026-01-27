@@ -21,7 +21,7 @@ void NetworkHost::addClient(INetworkSessionPtr session)
         m_players.emplace(assigned, PlayerInfo{assigned, session, "", true});
     }
 
-    // Important: handler can be invoked on TcpSession background thread.
+    // Important: handler can be invoked on TcpSession background thread
     session->setMessageHandler(
         [this, assigned](const Message& msg) {
             handleIncoming(assigned, msg);
@@ -31,7 +31,7 @@ void NetworkHost::addClient(INetworkSessionPtr session)
 
 void NetworkHost::poll()
 {
-    std::vector<std::pair<PlayerId, std::string>> disconnected; // (pid, reason)
+    std::vector<std::pair<PlayerId, std::string>> disconnected;
     std::vector<INetworkSessionPtr> keepAliveTargets;
 
     {
@@ -70,12 +70,12 @@ void NetworkHost::poll()
         }
     }
 
-    // Send disconnect notifications *after* releasing the lock.
+    // Send disconnect notifications after releasing the lock.
     for (const auto& [pid, reason] : disconnected) {
         onClientDisconnected(pid, reason.c_str());
     }
 
-    // Send KeepAlive *after* releasing the lock.
+    // Send KeepAlive after releasing the lock.
     if (!keepAliveTargets.empty()) {
         Message ka;
         ka.kind = MessageKind::KeepAlive;

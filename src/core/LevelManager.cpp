@@ -14,7 +14,7 @@ void LevelManager::onLinesCleared(int lines) {
 
     totalLinesCleared_ += static_cast<std::uint64_t>(lines);
 
-    // Example rule: every 10 lines -> +1 level
+    // example rule: every 10 lines -> +1 level
     int newLevel = static_cast<int>(totalLinesCleared_ / 10);
     if (newLevel > level_) {
         level_ = newLevel;

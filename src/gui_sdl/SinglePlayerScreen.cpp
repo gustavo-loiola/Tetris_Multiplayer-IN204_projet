@@ -77,13 +77,11 @@ SinglePlayerScreen::Layout SinglePlayerScreen::computeLayout(int windowW, int wi
     const int margin = 20;
     const int bottomReserve = 120;
 
-    // We want: [Left HUD]  margin  [Board centered]  margin  [Next Piece]
-    // Left/right panel widths scale with cell size (clamped).
     auto panelWForCell = [](int cell) {
         return std::clamp(cell * 8, 220, 340);
     };
 
-    // Start from height-driven cell size, then shrink until width fits.
+    // Start from height-driven cell size, then shrink until width fits
     int cellFromH = (windowH - (margin * 2) - bottomReserve) / rows;
     int cell = std::clamp(cellFromH, 16, 44);
 
@@ -101,7 +99,7 @@ SinglePlayerScreen::Layout SinglePlayerScreen::computeLayout(int windowW, int wi
             L.boardW = boardW;
             L.boardH = boardH;
 
-            // Board always centered.
+            // Board always centered
             L.boardX = (windowW - boardW) / 2;
             const int usableH = windowH - (margin * 2) - bottomReserve;
             L.boardY = margin + std::max(0, (usableH - boardH) / 2);
@@ -122,7 +120,7 @@ SinglePlayerScreen::Layout SinglePlayerScreen::computeLayout(int windowW, int wi
         }
     }
 
-    // Fallback: center board only, panels will be placed stacked in render().
+    // Fallback: center board only, panels will be placed stacked in render()
     {
         const int boardCellFromW = (windowW - margin * 2) / cols;
         const int boardCellFromH2 = (windowH - margin * 2 - bottomReserve) / rows;
@@ -136,7 +134,7 @@ SinglePlayerScreen::Layout SinglePlayerScreen::computeLayout(int windowW, int wi
         const int usableH = windowH - (margin * 2) - bottomReserve;
         L.boardY = margin + std::max(0, (usableH - L.boardH) / 2);
 
-        // Put panels under the board as a safe fallback.
+        // Put panels under the board as a safe fallback
         L.groupW = panelWForCell(cell2);
         L.groupX = (windowW - L.groupW) / 2;
 
@@ -284,7 +282,7 @@ void SinglePlayerScreen::render(Application& app)
     int ctrlX = gameX;
     int ctrlY = gameY + 190 + margin; // under stats
     int ctrlW = L.groupW;
-    int ctrlH = 0; // autosize (we'll set flags in renderHUD)
+    int ctrlH = 0;
 
     // RIGHT: Next Piece (smaller, from Layout)
     int nextX = L.nextX;

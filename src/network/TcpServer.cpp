@@ -120,7 +120,7 @@ void TcpServer::acceptLoop()
 
         if (clientSock == INVALID_SOCKET_FD) {
             if (!m_running) {
-                break; // probably closed due to stop()
+                break;
             }
             std::cerr << "TcpServer: accept failed\n";
             continue;

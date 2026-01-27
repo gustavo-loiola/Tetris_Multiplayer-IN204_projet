@@ -4,8 +4,6 @@
 #include <stdexcept>
 
 namespace tetris::net {
-
-// Very small helpers; you can extend or make more robust.
 namespace {
     std::string escape(const std::string& s) {
         std::string out;
@@ -48,8 +46,6 @@ namespace {
 
 std::string serialize(const Message& msg)
 {
-    // NOTE: This is intentionally straightforward and explicit
-    // so you can easily adapt it as you refine the protocol.
     std::ostringstream os;
 
     switch (msg.kind) {
@@ -78,7 +74,7 @@ std::string serialize(const Message& msg)
         os << "INPUT;";
         const auto& m = std::get<InputActionMessage>(msg.payload);
         os << m.playerId << ';' << m.clientTick << ';'
-           << static_cast<int>(m.action); // assumes InputAction is enum class
+           << static_cast<int>(m.action);
         break;
     }
         case MessageKind::StateUpdate: {

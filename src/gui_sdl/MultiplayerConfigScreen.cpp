@@ -5,7 +5,7 @@
 
 #include "gui_sdl/Application.hpp"
 #include "gui_sdl/StartScreen.hpp"
-#include "gui_sdl/LobbyScreen.hpp" // added below
+#include "gui_sdl/LobbyScreen.hpp"
 
 namespace tetris::gui_sdl {
 
@@ -26,11 +26,11 @@ MultiplayerConfigScreen::MultiplayerConfigScreen()
 }
 
 void MultiplayerConfigScreen::handleEvent(Application&, const SDL_Event&) {
-    // No special SDL handling; ImGui handles UI.
+    // No special SDL handling; ImGui handles UI
 }
 
 void MultiplayerConfigScreen::update(Application&, float) {
-    // No simulation here.
+    // No simulation here
 }
 
 void MultiplayerConfigScreen::render(Application& app)

@@ -113,7 +113,7 @@ void TcpSession::send(const Message& msg)
 
 void TcpSession::poll()
 {
-    // No-op: this implementation is event-driven via a background thread.
+    // No-op for TCP; reading is done in background thread.
 }
 
 void TcpSession::setMessageHandler(MessageHandler handler)

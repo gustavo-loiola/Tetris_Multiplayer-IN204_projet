@@ -69,7 +69,7 @@ bool GameState::tick() {
         return true; // moved down
     }
 
-    // Cannot move down => lock piece and spawn a new one
+    // Cannot move down -> lock piece and spawn a new one
     lockActiveTetrominoAndProcessLines();
 
     if (board_.isGameOver()) {
@@ -204,8 +204,6 @@ bool GameState::tryRotate(bool clockwise) {
         activeTetromino_ = rotated;
         return true;
     }
-
-    // Here we could implement wall kicks; for now, simple "no rotate if collides"
     return false;
 }
 

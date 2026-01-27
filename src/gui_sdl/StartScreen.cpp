@@ -11,7 +11,6 @@
 
 namespace tetris::gui_sdl {
 
-// Reuse the same palette as gameplay (ImU32 for convenience)
 static ImU32 colorForTetromino(tetris::core::TetrominoType type)
 {
     using tetris::core::TetrominoType;
@@ -77,8 +76,6 @@ void StartScreen::render(Application& app)
         ImGuiWindowFlags_NoMove;
 
     ImGui::Begin("Tetris", nullptr, flags);
-    //ImGui::Begin("Start Screen", nullptr, flags);
-    //ImGui::TextUnformatted("IN204 - Tetris Project");
     ImGui::Separator();
 
     if (ImGui::Button("Single Player", ImVec2(-1, 44))) {
@@ -115,7 +112,6 @@ void StartScreen::ensureInitialized(int w, int h)
     }
 
     // If window changed a lot, rebuild amount of pieces for density
-    // (keep it cheap: only rebuild when size change is meaningful)
     if (std::abs(w - lastW_) > 160 || std::abs(h - lastH_) > 160) {
         rebuildPieces(w, h);
         lastW_ = w;

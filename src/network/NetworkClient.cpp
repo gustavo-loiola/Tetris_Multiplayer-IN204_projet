@@ -162,7 +162,6 @@ void NetworkClient::handleMessage(const Message& msg)
             // Store StartGame
             m_lastStartGame = m;
 
-            // CRITICAL: clear stale data so client UI doesn't re-trigger old overlay
             m_lastMatchResult.reset();
             m_lastStateUpdate.reset();
             m_lastPlayerLeft.reset();
@@ -211,7 +210,6 @@ void NetworkClient::handleMessage(const Message& msg)
     }
 
     case MessageKind::KeepAlive: {
-        // Already updated m_lastHeardFromHost above; nothing else needed.
         break;
     }
 

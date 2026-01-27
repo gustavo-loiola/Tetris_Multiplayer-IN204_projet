@@ -35,7 +35,7 @@ void LobbyScreen::ensureHostStarted()
         cfg_.port,
         [this](tetris::net::INetworkSessionPtr session) {
             host_->addClient(std::move(session));
-            connected_ = true; // ok para UI (não é crítico)
+            connected_ = true;
         }
     );
 
@@ -56,7 +56,6 @@ void LobbyScreen::ensureClientStarted()
 
     client_ = std::make_shared<tetris::net::NetworkClient>(clientSession_, cfg_.playerName);
 
-    // manda join uma vez
     client_->start();
     joinSent_ = true;
 }
@@ -76,11 +75,9 @@ void LobbyScreen::update(Application& app, float)
         localId_ = client_->playerId();
     }
 
-    // ✅ avanço real: quando StartGame chegar, entra na tela multiplayer
     if (client_) {
         auto sg = client_->lastStartGame();
         if (sg.has_value()) {
-            // opcional: garantir que cfg_ reflita o que veio do host
             cfg_.mode = sg->mode;
             cfg_.timeLimitSeconds = sg->timeLimitSeconds;
             cfg_.piecesPerTurn = sg->piecesPerTurn;
@@ -164,7 +161,7 @@ void LobbyScreen::render(Application& app)
             ImGui::TableSetupColumn(
                 "ID",
                 ImGuiTableColumnFlags_WidthFixed,
-                40.0f   // largura em pixels
+                40.0f
             );
             ImGui::TableSetupColumn("Name");
             ImGui::TableSetupColumn("Status");

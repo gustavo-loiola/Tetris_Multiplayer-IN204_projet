@@ -71,7 +71,6 @@ void SharedTurnRules::rotateToNextAlive(const std::vector<PlayerSnapshot>& playe
 
     const int alive = countAlive(players);
     if (alive <= 1) {
-        // Rotation no longer meaningful; match should be ending.
         return;
     }
 

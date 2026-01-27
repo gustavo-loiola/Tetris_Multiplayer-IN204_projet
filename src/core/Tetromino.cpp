@@ -28,13 +28,9 @@ Tetromino::Shape Tetromino::blocks() const noexcept {
     return abs;
 }
 
-// NOTE: shapes are defined in a 4x4 bounding box around (0,0) origin.
-// You can tweak these later if you want SRS-like behavior, but this is fine
-// for a classic student project.
 Tetromino::Shape Tetromino::shapeFor(TetrominoType type, Rotation rotation) noexcept {
     using S = Tetromino::Shape;
 
-    // For readability, define some common shapes
     switch (type) {
     case TetrominoType::I:
         switch (rotation) {

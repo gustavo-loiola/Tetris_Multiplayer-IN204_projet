@@ -41,7 +41,7 @@ PlayerStateDTO StateUpdateMapper::toPlayerDTO(
 
             BoardCellDTO cellDto;
             cellDto.occupied   = occupied;
-            cellDto.colorIndex = occupied ? 0 : -1; // You can refine color info later.
+            cellDto.colorIndex = occupied ? 0 : -1;
 
             const int index = row * width + col;
             dto.board.cells[index] = cellDto;

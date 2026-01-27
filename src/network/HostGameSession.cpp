@@ -1,6 +1,6 @@
 #include "network/HostGameSession.hpp"
 
-#include "core/MatchRules.hpp" // for SharedTurnRules
+#include "core/MatchRules.hpp"
 #include "network/MessageTypes.hpp"
 
 namespace tetris::net {

@@ -15,7 +15,6 @@ public:
     void render(Application& app) override;
 
 private:
-    // IMPORTANT: declare Layout BEFORE any method that uses it
     struct Layout {
         int cell = 28;
 

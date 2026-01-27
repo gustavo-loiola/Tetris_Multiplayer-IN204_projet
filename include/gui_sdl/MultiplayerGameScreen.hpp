@@ -34,7 +34,7 @@ private:
     // ---- Config ----
     tetris::net::MultiplayerConfig cfg_{};
 
-    // ---- Network (optional) ----
+    // ---- Network ----
     std::shared_ptr<tetris::net::NetworkHost> host_;
     std::shared_ptr<tetris::net::NetworkClient> client_;
 
@@ -97,7 +97,7 @@ private:
     tetris::core::GameState sharedGame_;
     tetris::controller::GameController sharedCtrl_;
 
-    float oppInputAcc_ = 0.0f; // offline AI only
+    float oppInputAcc_ = 0.0f;
 
     // ---------- INPUT ----------
     static std::optional<tetris::controller::InputAction> actionFromKey(SDL_Keycode key);

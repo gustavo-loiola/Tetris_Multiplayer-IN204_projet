@@ -1,7 +1,7 @@
-#pragma once // Include guard
+#pragma once
 
-#include "Types.hpp" // For Position, Rotation, TetrominoType
-#include <array> // For std::array
+#include "Types.hpp"
+#include <array>
 
 // Namespace for Tetris core types
 namespace tetris::core {

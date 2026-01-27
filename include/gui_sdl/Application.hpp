@@ -29,7 +29,6 @@ public:
     SDL_Window* window() const { return m_window; }
     SDL_Renderer* renderer() const { return m_renderer; }
 
-    // Simple utility: window size
     void getWindowSize(int& w, int& h) const;
 
 private:

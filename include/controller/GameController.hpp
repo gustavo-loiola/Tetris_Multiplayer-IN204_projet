@@ -11,11 +11,11 @@ public:
     using Clock = std::chrono::steady_clock;
     using Duration = std::chrono::milliseconds;
 
-    /// Controller does not own the GameState; caller keeps it alive.
+    // Controller does not own the GameState; caller keeps it alive.
     explicit GameController(tetris::core::GameState& game);
 
     // Called by UI or main loop when some input happens
-    /// Handle a single discrete player action (e.g. key press).
+    // Handle a single discrete player action (e.g. key press).
     void handleAction(InputAction  action);
 
     // Called periodically with elapsed time since last call.

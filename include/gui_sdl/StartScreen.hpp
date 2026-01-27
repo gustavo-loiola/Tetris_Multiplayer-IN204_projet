@@ -5,8 +5,8 @@
 #include <vector>
 #include <random>
 
-#include "core/Types.hpp"       // TetrominoType, Rotation
-#include "core/Tetromino.hpp"   // Tetromino geometry
+#include "core/Types.hpp"
+#include "core/Tetromino.hpp"
 
 namespace tetris::gui_sdl {
 

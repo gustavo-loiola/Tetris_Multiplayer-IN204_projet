@@ -1,7 +1,7 @@
-#pragma once // Include guard
+#pragma once
 
 #include <cstdint> // For fixed-width integer types
-#include <array> // For std::array
+#include <array>
 
 // Namespace for Tetris core types
 namespace tetris::core {

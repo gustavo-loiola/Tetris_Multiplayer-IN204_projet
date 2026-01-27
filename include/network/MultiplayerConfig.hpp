@@ -3,7 +3,7 @@
 #include <string>
 #include <cstdint>
 
-#include "network/MessageTypes.hpp" // for tetris::net::GameMode
+#include "network/MessageTypes.hpp"
 
 namespace tetris::net {
 

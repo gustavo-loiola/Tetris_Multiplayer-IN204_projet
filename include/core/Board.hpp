@@ -9,7 +9,7 @@ namespace tetris::core {
 
 enum class CellState : std::uint8_t {
     Empty,
-    Filled // You can later store color / type info if needed
+    Filled
 };
 
 class Board {
@@ -35,7 +35,7 @@ public:
     // Clear full lines, return number of cleared lines
     int clearFullLines();
 
-    // True if any filled cell is in the "spawn zone" (we define spawn rows later)
+    // True if any filled cell is in the "spawn zone"
     bool isGameOver() const noexcept;
 
 private:

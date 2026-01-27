@@ -8,9 +8,9 @@
 
 namespace tetris::net {
 
-/// Simple TCP server that listens on a port and creates TcpSession
-/// instances for each accepted connection. It calls a user-provided
-/// callback with INetworkSessionPtr for each new client.
+// Simple TCP server that listens on a port and creates TcpSession
+// instances for each accepted connection. It calls a user-provided
+// callback with INetworkSessionPtr for each new client.
 class TcpServer {
 public:
     using NewSessionCallback = std::function<void(INetworkSessionPtr)>;
@@ -18,10 +18,10 @@ public:
     TcpServer(std::uint16_t port, NewSessionCallback onNewSession);
     ~TcpServer();
 
-    /// Start the accept loop in a background thread.
+    // Start the accept loop in a background thread.
     void start();
 
-    /// Stop the server and join the background thread.
+    // Stop the server and join the background thread.
     void stop();
 
     bool isRunning() const { return m_running; }

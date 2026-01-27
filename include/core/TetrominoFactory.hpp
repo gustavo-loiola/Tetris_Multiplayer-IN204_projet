@@ -12,8 +12,6 @@ public:
 
     // Create next random piece with given origin
     Tetromino createRandom(Position origin);
-
-    // For deterministic testing, you can later inject a custom RNG
 private:
     std::mt19937 rng_;
 };

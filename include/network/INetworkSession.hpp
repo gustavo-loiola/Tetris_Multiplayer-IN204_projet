@@ -12,16 +12,16 @@ public:
 
     virtual ~INetworkSession() = default;
 
-    /// Send a message to the remote peer.
+    // Send a message to the remote peer.
     virtual void send(const Message& msg) = 0;
 
-    /// Poll underlying sockets once; host/client can call this from their update loop.
+    // Poll underlying sockets once; host/client can call this from their update loop.
     virtual void poll() = 0;
 
-    /// Set callback invoked whenever a complete Message is received.
+    // Set callback invoked whenever a complete Message is received.
     virtual void setMessageHandler(MessageHandler handler) = 0;
 
-    /// Optional: host or client may query whether session is still alive.
+    // Host or client may query whether session is still alive.
     virtual bool isConnected() const = 0;
 };
 

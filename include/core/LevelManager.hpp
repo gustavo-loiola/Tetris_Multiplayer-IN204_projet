@@ -16,7 +16,6 @@ public:
 
     void reset(int startingLevel = 0);
 
-    // Optional: compute current fall interval in milliseconds
     int gravityIntervalMs() const noexcept;
 
 private:

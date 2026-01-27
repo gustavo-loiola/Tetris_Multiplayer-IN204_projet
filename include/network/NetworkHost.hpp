@@ -26,7 +26,7 @@ public:
 
     void addClient(INetworkSessionPtr session);
 
-    /// Poll sessions; detects disconnects and broadcasts PlayerLeft.
+    // Poll sessions; detects disconnects and broadcasts PlayerLeft.
     void poll();
 
     std::vector<InputActionMessage> consumeInputQueue();
@@ -40,7 +40,7 @@ public:
     bool allConnectedClientsReadyForRematch() const;
     bool anyClientDeclinedRematch() const;
 
-    /// Rematch: clear readiness flags (called after match finishes or after restart)
+    // Rematch: clear readiness flags (called after match finishes or after restart)
     void clearRematchFlags();
 
     bool isMatchStarted() const { return m_matchStarted; }
@@ -74,7 +74,7 @@ private:
     bool m_matchStarted{false};
     Tick m_startTick{0};
 
-    PlayerId m_nextPlayerId{2}; // começa em 2 para reservar 1 ao host
+    PlayerId m_nextPlayerId{2}; // Starts at 2 to reserve 1 to the host
 
     bool m_anyClientDisconnected{false};
 

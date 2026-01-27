@@ -12,17 +12,17 @@
 
     class TcpServer;
 
-    /// Concrete INetworkSession using a TCP socket and line-based protocol.
-    /// It runs a background thread that:
-    ///   - reads bytes from the socket
-    ///   - splits on '\n'
-    ///   - parses each line as a serialized Message
-    ///   - invokes the registered MessageHandler.
-    /// `poll()` is a no-op; the session is event-driven.
+    // Concrete INetworkSession using a TCP socket and line-based protocol.
+    // It runs a background thread that:
+    //   - reads bytes from the socket
+    //   - splits on '\n'
+    //   - parses each line as a serialized Message
+    //   - invokes the registered MessageHandler.
+    // `poll()` is a no-op; the session is event-driven.
     class TcpSession : public INetworkSession {
     public:
-        /// Create a client session connected to the given host:port.
-        /// Returns nullptr on failure.
+        // Create a client session connected to the given host:port.
+        // Returns nullptr on failure.
         static INetworkSessionPtr createClient(const std::string& host, std::uint16_t port);
 
         ~TcpSession() override;

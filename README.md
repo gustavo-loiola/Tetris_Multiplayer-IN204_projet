@@ -108,8 +108,6 @@ It includes:
 
 ### Console (optional / debug)
 
-If your project includes it:
-
 * **`tetris_console`** (useful to debug core logic without GUI)
 
 ---

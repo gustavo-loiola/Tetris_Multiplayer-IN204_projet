@@ -150,7 +150,7 @@ Core messages used by the multiplayer system:
 * `StateUpdate` (snapshot DTO + HUD fields like time left / turn state as implemented)
 * `MatchResult`
 * `Error`
-* (Optional depending on your branch) `PlayerLeft`
+* `PlayerLeft`
 
 Serialization is **one message per line** of UTF-8 text.
 
@@ -186,7 +186,7 @@ The `docs/` folder contains:
 
 * Use cases
 * Functional specifications
-* High-level architecture (“gros grains”)
+* High-level architecture
 * Class responsibilities + design patterns
 * UML diagrams (class + key sequences)
 

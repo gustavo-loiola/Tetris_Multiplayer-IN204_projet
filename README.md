@@ -12,14 +12,14 @@ This repository contains:
 
 ## 1) Project Description
 
-### Single-player Tetris (implemented)
+### Single-player Tetris
 Classic Tetris mechanics:
 - Standard 7 Tetrominoes (I, O, T, L, J, S, Z)
 - Lateral movement, rotation, gravity, line clearing
 - Level progression and scoring
 - Pause/resume and game over
 
-### Multiplayer (implemented)
+### Multiplayer
 The multiplayer layer follows an **authoritative host** model:
 - One player **hosts** a match (server)
 - Another player **joins** remotely (client)
@@ -188,7 +188,6 @@ The `docs/` folder contains:
 * Functional specifications
 * High-level architecture
 * Class responsibilities + design patterns
-* UML diagrams (class + key sequences)
 
 ---
 
